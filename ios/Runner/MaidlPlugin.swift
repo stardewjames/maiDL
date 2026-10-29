@@ -58,7 +58,7 @@ final class MaidlPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         return nil
     }
 
-    private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         let coordinator = DownloadCoordinator.shared
         let arguments = call.arguments as? [String: Any] ?? [:]
 

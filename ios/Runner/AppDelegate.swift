@@ -15,7 +15,10 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
-    MaidlPlugin.register(with: engineBridge.applicationRegistrar)
+    guard let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "MaidlPlugin") else {
+      preconditionFailure("Could not obtain maiDL's Flutter plugin registrar.")
+    }
+    MaidlPlugin.register(with: registrar)
   }
 
   override func application(
