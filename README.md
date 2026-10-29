@@ -6,10 +6,25 @@ Flutter app for Android and iOS: paste a public video/image link, or share a lin
 
 - Link entry with clipboard paste, progress, persistent history, retry and cancellation.
 - Android share target queues native work without starting the Flutter UI. Downloads run through WorkManager and publish into MediaStore under `Pictures/maiDL` or `Movies/maiDL`; no storage permission is needed.
-- iOS share extension queues a native background `URLSession` transfer. The containing app handles completion and adds the file to Photos using add-only authorization. The Flutter UI is not needed to finish a transfer.
+- iOS share extension queues a native background `URLSession` transfer. Native completion code checks/prepares videos, then adds media to Photos using add-only authorization. The Flutter UI does not need to be running.
 - Direct HTTP(S) media URLs, redirects, and public HTML pages exposing a direct `og:video`, `og:image`, or video/source URL. Video metadata takes precedence over image metadata.
 
-**Not a universal social-media downloader.** YouTube/TikTok/Instagram and other post links are not guaranteed to expose downloadable media. Pages may expose only a thumbnail. Authentication, private posts, DRM, HLS/DASH playlists and site-specific extraction are not supported. The OS Photos/gallery app must support the downloaded file's codec and container; a video MIME type alone does not guarantee Photos can import it. Only download material you have permission to save.
+**Not a universal social-media downloader.** YouTube/TikTok/Instagram and other post links are not guaranteed to expose downloadable media. Pages may expose only a thumbnail. Authentication, private posts, DRM, HLS/DASH playlists and site-specific extraction are not supported. Android's gallery must support the original downloaded format. Only download material you have permission to save.
+
+## iOS video compatibility
+
+Videos are prepared as **MP4 with H.264 video and AAC audio when audio is present**. Silent videos stay silent. The app checks actual track codecs, playability, duration and the container's file-type box; changing a filename to `.mp4` is not treated as conversion.
+
+- Already-compatible MP4 files are reused unchanged, avoiding unnecessary CPU use and quality loss.
+- Compatible H.264/AAC files in another container, such as MOV, are remuxed without recompression when possible.
+- Other sources that AVFoundation can decode/export are converted with Apple's standard H.264 export presets, capped at 1080p. Transcoding can reduce quality and uses extra processing time and temporary disk space.
+- Exported output is checked again for MP4/H.264/AAC, video playability, audio retention and display aspect/orientation before submission to Photos.
+- Damaged, protected, audio-only and unsupported inputs fail explicitly. This does not add universal MKV/WebM decoding or a streaming downloader. FFmpeg is used only by CI to generate/probe fixtures; it is not shipped in the app.
+
+“Preparing video” remains an active, cancelable state, distinct from the irreversible Photos commit. The downloaded source is retained during preparation. If iOS terminates preparation, a later app launch/refresh restarts it from that local source once the session's process ownership is available, without redownloading.
+
+This targets broadly supported iOS media formats, not a guarantee that every file will import: Photos authorization, available storage, damaged media and OS lifecycle restrictions can still cause failure.
+
 
 ## Background behavior
 
@@ -17,9 +32,11 @@ Sharing explicitly to maiDL starts a save; there is no clipboard monitoring or i
 
 “Background” is best-effort OS scheduling, not a promise of immediate completion. Network, battery policies, device storage and force-stop/force-quit affect delivery. iOS controls background transfer timing and may delay the containing app's completion callback. Failed jobs can be inspected and retried in maiDL. iOS completion is silent; successful files appear in Photos. Android uses progress/result notifications when permitted.
 
+Network transfer can continue through iOS's background transfer service, but video conversion is CPU work and has no unlimited background execution entitlement. iOS can suspend or terminate it; opening maiDL may be necessary to finish preparation. A share sheet waits for any already-started preparation/Photos work before completing its dismissal.
+
 Clearing history or removing an entry does **not** delete saved media. Android partial downloads use private app storage before being copied into a pending MediaStore entry; publication occurs only after the copy succeeds. This temporarily requires additional disk space.
 
-Android automatic retries resume only when the server provides a strong ETag and honors byte ranges; otherwise they restart safely. Explicit retries start a fresh attempt. On iOS, cancellation stops queued/downloading work; once a Photos commit starts, cancellation/removal must wait for it to finish. A crash between a successful library commit and recording completion can leave history incomplete; retrying then may duplicate an already-saved item.
+Android automatic retries resume only when the server provides a strong ETag and honors byte ranges; otherwise they restart safely. Explicit retries start a fresh attempt. On iOS, cancellation stops queued/downloading/preparing work; once a Photos commit starts, cancellation/removal must wait for it to finish. A crash between a successful library commit and recording completion can leave history incomplete; retrying then may duplicate an already-saved item.
 
 
 ## Run on Android
@@ -54,13 +71,13 @@ The app never needs read access to the entire Photos library. There is no public
 
 ## GitHub builds
 
-Repository: [stardewjames/maiDL](https://github.com/stardewjames/maiDL).
+Public repository: [stardewjames/maiDL](https://github.com/stardewjames/maiDL).
 Open [Actions → Build mobile apps](https://github.com/stardewjames/maiDL/actions/workflows/build.yml) to run a manual build or download artifacts from a completed run.
 
 `.github/workflows/build.yml` runs on pushes to `main`, pull requests, and **Run workflow**. Flutter is pinned to `3.47.8`; third-party actions are pinned to commit hashes. No signing secrets are needed.
 
 - **Android** uses Ubuntu and Java 17, resolves locked dependencies, analyzes/tests Flutter, builds a release APK, and runs the native JVM tests. Artifacts: `maidl-android-<run number>` and `maidl-android-tests-<run number>`.
-- **iOS** uses a macOS runner with Xcode and builds `Runner.app` plus its embedded share extension with `--no-codesign`. It checks that the extension is present and its version/build number matches the app, then uploads `maidl-ios-unsigned-<run number>`.
+- **iOS** uses a macOS runner with Xcode. First, `bash tool/verify_ios_video.sh` generates fixtures and compiles/runs the shipping AVFoundation preparation helper. It verifies unchanged MP4, lossless MOV remux, disguised MOV, HEVC and ProRes/PCM conversion, rotation, silent video, invalid input and cancellation. Then it builds `Runner.app` plus its embedded share extension with `--no-codesign`, checks matching app/extension versions, and uploads `maidl-ios-unsigned-<run number>`.
 
 Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The unsigned iOS app is a compile-check artifact, not an installable IPA or TestFlight upload.** Producing an installable iOS distribution requires your Apple team, a signing certificate and matching provisioning profiles for both the app and extension, including the App Group capability. Do not commit certificates, profiles or Android keystores.
 
@@ -80,13 +97,15 @@ flowchart LR
     Native --> Session
     Worker --> Store[MediaStore gallery]
     Session --> Completion[iOS completion handler]
-    Completion --> Photos[Photos add-only save]
+    Completion -->|Video| Preparation[Validate / prepare video]
+    Completion -->|Image| Photos[Photos add-only save]
+    Preparation --> Photos
 ```
 
 - `lib/src/core`: job model, link parsing, channel API and UI state mirror.
 - `lib/src/ui`: link entry, job cards, permissions and history settings.
 - `android/app/src/main/kotlin/app/maidl`: share intake, queue, worker, HTTP transfer and MediaStore publication.
-- `ios/Shared`: App Group job records, link/media resolution, background sessions and Photos import (compiled into app and extension).
+- `ios/Shared`: App Group job records, link/media resolution, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
 - `ios/Runner`: background event routing and Flutter channels.
 - `ios/ShareExtension`: lightweight share-sheet UI and intake.
 
@@ -99,6 +118,8 @@ flutter analyze
 flutter test
 # From android/ (use gradlew.bat on Windows):
 ./gradlew :app:testDebugUnitTest :app:assembleRelease
+# From repository root on macOS with Xcode (installs FFmpeg via Homebrew if absent):
+bash tool/verify_ios_video.sh
 ```
 
 The JVM tests exercise the actual Kotlin transfer engine against local HTTP responses: direct media, metadata resolution, exact range resume, ignored ranges, HTTP failures and unsupported content. Flutter tests cover state transitions, URL parsing, user input, permissions UI and small-screen layout.

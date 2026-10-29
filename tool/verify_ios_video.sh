@@ -40,10 +40,10 @@ ffmpeg -hide_banner -loglevel error -nostdin -y \
 ffmpeg -hide_banner -loglevel error -nostdin -y \
   -i "$work_dir/h264-aac.mp4" -map 0 -c:v prores_ks -profile:v 0 \
   -threads:v 1 -pix_fmt yuv422p10le -c:a pcm_s16le "$work_dir/prores-pcm.mov"
-# A remux writes a real display matrix; encoding with a rotate tag alone does not.
+# Set an input display matrix explicitly; recent FFmpeg ignores a rotate tag.
 ffmpeg -hide_banner -loglevel error -nostdin -y \
-  -i "$work_dir/prores-pcm.mov" -map 0 -c copy \
-  -metadata:s:v:0 rotate=90 "$work_dir/prores-pcm-rotated.mov"
+  -display_rotation:v:0 90 -i "$work_dir/prores-pcm.mov" -map 0 -c copy \
+  "$work_dir/prores-pcm-rotated.mov"
 ffmpeg -hide_banner -loglevel error -nostdin -y \
   -i "$work_dir/h264-aac.mp4" -map 0:v:0 -c copy -an -f mov "$work_dir/silent.mov"
 ffmpeg -hide_banner -loglevel error -nostdin -y \
