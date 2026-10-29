@@ -46,6 +46,7 @@ enum PhotoLibrarySaver {
     static func save(
         fileURL: URL,
         kind: String,
+        fileName: String,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard accessStatus() == "granted" else {
@@ -56,6 +57,10 @@ enum PhotoLibrarySaver {
         PHPhotoLibrary.shared().performChanges({
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
+            if kind == "video" {
+                options.originalFilename = fileName
+                options.uniformTypeIdentifier = "public.mpeg-4"
+            }
             // Move rather than copy: videos can be large, and the temp file is
             // ours to discard.
             options.shouldMoveFile = true
