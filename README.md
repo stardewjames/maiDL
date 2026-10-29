@@ -64,6 +64,8 @@ Open [Actions → Build mobile apps](https://github.com/stardewjames/maiDL/actio
 
 Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The unsigned iOS app is a compile-check artifact, not an installable IPA or TestFlight upload.** Producing an installable iOS distribution requires your Apple team, a signing certificate and matching provisioning profiles for both the app and extension, including the App Group capability. Do not commit certificates, profiles or Android keystores.
 
+The iOS extension embedding phase intentionally precedes the Flutter scripts to avoid an Xcode build dependency cycle.
+
 CI checks compilation and automated behavior; it does not replace the signed-device sharing/background/Photos acceptance scenarios below.
 
 
@@ -101,7 +103,7 @@ flutter test
 
 The JVM tests exercise the actual Kotlin transfer engine against local HTTP responses: direct media, metadata resolution, exact range resume, ignored ranges, HTTP failures and unsupported content. Flutter tests cover state transitions, URL parsing, user input, permissions UI and small-screen layout.
 
-Verification performed in the development environment:
+Verification performed locally and in [the successful hosted build](https://github.com/stardewjames/maiDL/actions/runs/40954670017):
 
 | Check | Result |
 | --- | --- |
@@ -113,10 +115,11 @@ Verification performed in the development environment:
 | Flutter UI browser smoke | Phone-size rendering, invalid-link feedback and Settings exercised |
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
-| Apple SDK build and signed-device Photos flow | Not run: requires macOS/Xcode and a provisioned device |
+| Apple SDK release build | Passed on GitHub macOS; uploaded app contains `ShareExtension.appex`, with matching version `1.0.0` / build `3` |
+| Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | Android OS background/gallery flow | Not run: no Android device/emulator connected |
 
-The local Android APK is version `1.0.0` (build `1`), approximately 47.5 MiB, and uses development signing. It is available at `build/app/outputs/flutter-apk/app-release.apk`.
+The Android APK uses development signing. Download the CI artifact from the successful run, or build locally to obtain `build/app/outputs/flutter-apk/app-release.apk`. CI artifacts use the workflow run number as their build number.
 
 
 These checks do **not** prove Android OS scheduling/MediaStore integration or iOS Photos/share-extension lifecycle. Before distributing, exercise both platforms on devices, including: first-time authorization, share while the app is closed/open, a large video with the phone locked, network interruption, denied permissions, cancellation, low storage, unsupported codecs and force-quit/relaunch. Verify that canceled/failed jobs do not publish partial media and that clearing history leaves already-saved media untouched.
