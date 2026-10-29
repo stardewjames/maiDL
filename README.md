@@ -122,21 +122,22 @@ flutter test
 bash tool/verify_ios_video.sh
 ```
 
-The JVM tests exercise the actual Kotlin transfer engine against local HTTP responses: direct media, metadata resolution, exact range resume, ignored ranges, HTTP failures and unsupported content. Flutter tests cover state transitions, URL parsing, user input, permissions UI and small-screen layout.
+The JVM tests exercise the actual Kotlin transfer engine against local HTTP responses: direct media, metadata resolution, exact range resume, ignored ranges, HTTP failures and unsupported content. Flutter tests cover state transitions, URL parsing, user input, permissions UI, video-preparation state and small-screen layout.
 
-Verification performed locally and in [the successful hosted build](https://github.com/stardewjames/maiDL/actions/runs/40954670017):
+Verification performed locally and in [the successful hosted build](https://github.com/stardewjames/maiDL/actions/runs/40962761772):
 
 | Check | Result |
 | --- | --- |
 | Flutter static analysis | No issues |
-| Flutter tests | 40 passed |
-| Android JVM tests | 45 passed |
+| Flutter tests | 42 passed |
+| Android JVM tests | Passed |
 | Android release assembly | Passed |
 | Kotlin downloader live smoke | Downloaded a 30,320-byte WebP over HTTPS; RIFF/WebP signature verified |
-| Flutter UI browser smoke | Phone-size rendering, invalid-link feedback and Settings exercised |
+| Flutter UI browser smoke | Phone-size rendering, invalid-link feedback, Settings, and cancelable “Preparing video” vs. non-cancelable “Adding to Photos” exercised |
+| iOS video preparation (macOS AVFoundation) | Compatible MP4 kept byte-identical; H.264/AAC MOV remuxed without re-encoding; disguised MOV, HEVC, ProRes/PCM, rotated and silent sources converted to verified H.264/AAC MP4; corrupt and audio-only input rejected; cancellation leaves no output |
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
-| Apple SDK release build | Passed on GitHub macOS; uploaded app contains `ShareExtension.appex`, with matching version `1.0.0` / build `3` |
+| Apple SDK release build | Passed on GitHub macOS; uploaded app contains `ShareExtension.appex`, with matching version `1.0.0` / build `6` |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | Android OS background/gallery flow | Not run: no Android device/emulator connected |
 
