@@ -16,6 +16,8 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
     private var eventsCompletion: (() -> Void)?
     private var eventsFinished = false
     private var pendingJobs = Set<String>()
+    private var preparations: [String: VideoPreparation] = [:]
+    private var preparationMonitor: DispatchSourceTimer?
     private var dismissalCompletion: (() -> Void)?
     private var lastPersist: [String: Int64] = [:]
     private let persistInterval: Int64 = 700
@@ -44,7 +46,7 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
     @discardableResult
     func enqueue(jobId: String) -> Bool {
         guard let job = store.get(id: jobId),
-              job.isActive, job.status != "saving",
+              job.status == "queued" || job.status == "downloading",
               job.sessionIdentifier == identifier,
               let url = URL(string: job.mediaUrl ?? job.url),
               let scheme = url.scheme?.lowercased(),
@@ -63,6 +65,14 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
     }
 
     func cancel(job: JobRecord) {
+        stateLock.lock()
+        let preparation = preparations[Self.workKey(job)]
+        let hasPendingWork = pendingJobs.contains(Self.workKey(job))
+        stateLock.unlock()
+        preparation?.cancel()
+        if !hasPendingWork {
+            store.removeIncomingFiles(for: job.id, transferToken: job.transferToken)
+        }
         session.getAllTasks { tasks in
             for task in tasks where task.taskDescription == "\(job.id)|\(job.transferToken)" {
                 task.cancel()
@@ -70,7 +80,7 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    /// Includes asynchronous Photos work after the URLSession task disappears.
+    /// Includes asynchronous preparation and Photos work after the task disappears.
     func liveTaskIds(completion: @escaping (Set<String>) -> Void) {
         guard let session else {
             completion([])
@@ -81,7 +91,10 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
             self.stateLock.lock()
             let pending = self.pendingJobs
             self.stateLock.unlock()
-            completion(Set(tasks.compactMap { self.job(for: $0)?.id }).union(pending))
+            let pendingIds = pending.compactMap {
+                $0.split(separator: "|", maxSplits: 1).first.map(String.init)
+            }
+            completion(Set(tasks.compactMap { self.job(for: $0)?.id }).union(pendingIds))
         }
     }
 
@@ -117,14 +130,16 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
     }
 
     func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
+        stateLock.lock()
         ownership = nil
+        stateLock.unlock()
         // Invalidation is also a terminal event drain; preserve the latch if
         // UIKit has not supplied its completion handler yet.
         urlSessionDidFinishEvents(forBackgroundURLSession: session)
     }
 
     /// A per-share session is never reused. Release its delegate cycle and
-    /// process lease after both URLSession and Photos have finished.
+    /// process lease after URLSession, preparation and Photos have finished.
     func finishIfIdle() {
         guard SharedConfig.isShareSessionIdentifier(identifier), let session else { return }
         session.getAllTasks { [weak self] tasks in
@@ -137,8 +152,8 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         }
     }
 
-    /// Do not terminate an extension while its already-delivered download is
-    /// being moved into shared storage or committed to Photos.
+    /// Do not terminate an extension while a delivered download is being
+    /// stored, prepared, or committed to Photos.
     func afterCurrentWork(_ completion: @escaping () -> Void) {
         stateLock.lock()
         let ready = pendingJobs.isEmpty
@@ -147,15 +162,23 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         if ready { DispatchQueue.main.async { completion() } }
     }
 
-    private func beginWork(jobId: String) {
+    @discardableResult
+    private func beginWork(job: JobRecord) -> Bool {
         stateLock.lock()
-        pendingJobs.insert(jobId)
-        stateLock.unlock()
+        defer { stateLock.unlock() }
+        guard ownership != nil, !invalidating else { return false }
+        return pendingJobs.insert(Self.workKey(job)).inserted
     }
 
-    private func finishWork(jobId: String) {
+    private func finishWork(job: JobRecord) {
         stateLock.lock()
-        pendingJobs.remove(jobId)
+        let key = Self.workKey(job)
+        pendingJobs.remove(key)
+        preparations.removeValue(forKey: key)
+        if preparations.isEmpty {
+            preparationMonitor?.cancel()
+            preparationMonitor = nil
+        }
         let ready = eventsFinished && pendingJobs.isEmpty && eventsCompletion != nil
         let completion = ready ? eventsCompletion : nil
         if ready {
@@ -187,13 +210,13 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
             downloadTask.cancel()
             return
         }
-        guard job.status != "saving" else { return }
+        guard job.status == "queued" || job.status == "downloading" else { return }
         let now = JobRecord.nowMillis()
         guard now - (lastPersist[job.id] ?? 0) >= persistInterval else { return }
         lastPersist[job.id] = now
         do {
             if let updated = try update(job, change: { current in
-                guard current.status != "saving" else { return false }
+                guard current.status == "queued" || current.status == "downloading" else { return false }
                 current.status = "downloading"
                 current.bytesReceived = totalBytesWritten
                 current.totalBytes = totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : -1
@@ -212,8 +235,10 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         downloadTask: URLSessionDownloadTask,
         didFinishDownloadingTo location: URL
     ) {
-        guard let job = job(for: downloadTask), job.status != "saving" else { return }
-        beginWork(jobId: job.id)
+        guard let job = job(for: downloadTask),
+              job.status == "queued" || job.status == "downloading",
+              beginWork(job: job)
+        else { return }
         handleDownload(job: job, jobId: job.id, task: downloadTask, location: location)
     }
 
@@ -223,11 +248,13 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         didCompleteWithError error: Error?
     ) {
         defer { finishIfIdle() }
-        guard let error, let job = job(for: task), job.status != "saving" else { return }
+        guard let error, let job = job(for: task),
+              job.status == "queued" || job.status == "downloading"
+        else { return }
         let nsError = error as NSError
         do {
             if let updated = try update(job, change: { current in
-                guard current.status != "saving" else { return false }
+                guard current.status == "queued" || current.status == "downloading" else { return false }
                 if nsError.domain == NSURLErrorDomain && nsError.code == NSURLErrorCancelled {
                     current.status = "canceled"
                     current.error = nil
@@ -310,7 +337,7 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
                         return
                     }
                 }
-                finishWork(jobId: jobId)
+                finishWork(job: job)
             } catch {
                 fail(&job, message: "The download couldn't be stored: \(error.localizedDescription)")
             }
@@ -367,34 +394,147 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
             return
         }
         do {
-            guard let saving = try update(job, change: { current in
+            guard let pending = try update(job, change: { current in
+                guard current.status == "queued" || current.status == "downloading" else { return false }
                 current.kind = kind.rawValue
                 current.fileName = fileName
                 current.mimeType = mime ?? MediaTypes.contentType(forFileName: fileName)
-                current.status = "saving"
+                current.status = kind == .video ? "preparing" : "saving"
+                current.pendingSourceFile = kind == .video ? incoming.lastPathComponent : nil
                 current.bytesReceived = size
                 return true
             }) else {
                 try? fileManager.removeItem(at: incoming)
-                finishWork(jobId: jobId)
+                finishWork(job: job)
                 return
             }
-            job = saving
-            emit(saving)
+            job = pending
+            emit(pending)
         } catch {
             try? fileManager.removeItem(at: incoming)
             fail(&job, message: "The download couldn't be stored: \(error.localizedDescription)")
             return
         }
 
-        PhotoLibrarySaver.save(fileURL: incoming, kind: kind.rawValue) { [self] result in
-            defer {
-                try? fileManager.removeItem(at: incoming)
-                finishWork(jobId: jobId)
+        if kind == .video {
+            prepareVideo(job: job, source: incoming)
+        } else {
+            saveToPhotos(job: job, fileURL: incoming)
+        }
+    }
+
+    /// Called only after acquiring this session's process lease. The durable
+    /// source survives process death; any partial export can be recreated.
+    func resumePreparation(job: JobRecord) {
+        guard job.status == "preparing", job.sessionIdentifier == identifier,
+              beginWork(job: job)
+        else { return }
+        DispatchQueue.global(qos: .utility).async { [self] in
+            guard let current = store.get(id: job.id),
+                  current.status == "preparing",
+                  current.transferToken == job.transferToken,
+                  current.sessionIdentifier == identifier
+            else {
+                cleanupAndFinish(job: job)
+                return
             }
+            do {
+                let source = try store.pendingSourceURL(for: current)
+                guard FileManager.default.fileExists(atPath: source.path) else {
+                    throw LinkError(
+                        code: "video_source_missing",
+                        message: "The downloaded video is unavailable. Tap Try again."
+                    )
+                }
+                prepareVideo(job: current, source: source)
+            } catch {
+                var failed = current
+                fail(&failed, message: error.localizedDescription)
+            }
+        }
+    }
+
+    private func prepareVideo(job: JobRecord, source: URL) {
+        do {
+            let output = try store.incomingDirectory()
+                .appendingPathComponent("\(job.id).\(job.transferToken).prepared.mp4")
+            guard output != source else {
+                throw LinkError(code: "invalid_video_source", message: "The downloaded video is unavailable. Tap Try again.")
+            }
+            if FileManager.default.fileExists(atPath: output.path) {
+                try FileManager.default.removeItem(at: output)
+            }
+            stateLock.lock()
+            let preparation = VideoCompatibility.prepare(input: source, output: output) { [self] result in
+                switch result {
+                case .success(let prepared):
+                    do {
+                        let attributes = try FileManager.default.attributesOfItem(atPath: prepared.path)
+                        let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+                        guard let saving = try update(job, change: { current in
+                            guard current.status == "preparing" else { return false }
+                            current.status = "saving"
+                            current.fileName = (current.fileName as NSString).deletingPathExtension + ".mp4"
+                            current.mimeType = "video/mp4"
+                            current.bytesReceived = size
+                            current.totalBytes = size
+                            current.pendingSourceFile = nil
+                            return true
+                        }) else {
+                            cleanupAndFinish(job: job)
+                            return
+                        }
+                        emit(saving)
+                        saveToPhotos(job: saving, fileURL: prepared)
+                    } catch {
+                        var failed = job
+                        fail(&failed, message: "The prepared video couldn't be stored: \(error.localizedDescription)")
+                    }
+                case .failure(let error):
+                    var failed = job
+                    fail(&failed, message: error.localizedDescription)
+                }
+            }
+            preparations[Self.workKey(job)] = preparation
+            if preparationMonitor == nil {
+                let monitor = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
+                monitor.schedule(deadline: .now(), repeating: 0.5)
+                monitor.setEventHandler { [weak self] in self?.cancelObsoletePreparations() }
+                preparationMonitor = monitor
+                monitor.resume()
+            }
+            stateLock.unlock()
+        } catch {
+            var failed = job
+            fail(&failed, message: "The video couldn't be prepared: \(error.localizedDescription)")
+        }
+    }
+
+    /// A live/suspended extension keeps its lease. Observe cross-process
+    /// cancellation instead of letting the app steal that session.
+    private func cancelObsoletePreparations() {
+        stateLock.lock()
+        let snapshot = preparations
+        stateLock.unlock()
+        for (key, preparation) in snapshot {
+            let parts = key.split(separator: "|", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let current = store.get(id: parts[0])
+            if current?.transferToken != parts[1]
+                || current?.sessionIdentifier != identifier
+                || current?.status != "preparing" {
+                preparation.cancel()
+            }
+        }
+    }
+
+    private func saveToPhotos(job: JobRecord, fileURL: URL) {
+        PhotoLibrarySaver.save(fileURL: fileURL, kind: job.kind, fileName: job.fileName) { [self] result in
+            defer { cleanupAndFinish(job: job) }
             do {
                 if let finished = try update(job, change: { current in
                     guard current.status == "saving" else { return false }
+                    current.pendingSourceFile = nil
                     switch result {
                     case .success(let identifier):
                         current.status = "completed"
@@ -414,18 +554,32 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         }
     }
 
+    private func cleanupAndFinish(job: JobRecord) {
+        store.removeIncomingFiles(for: job.id, transferToken: job.transferToken)
+        finishWork(job: job)
+    }
+
+    private static func workKey(_ job: JobRecord) -> String {
+        "\(job.id)|\(job.transferToken)"
+    }
+
     private func fail(_ job: inout JobRecord, message: String) {
-        defer { finishWork(jobId: job.id) }
         do {
             if let failed = try update(job, change: { current in
+                guard current.status != "saving" else { return false }
+                current.pendingSourceFile = nil
                 current.status = "failed"
                 current.error = message
                 return true
             }) {
                 emit(failed)
             }
+            cleanupAndFinish(job: job)
         } catch {
             NSLog("maiDL could not persist download failure: %@", error.localizedDescription)
+            // A still-durable preparing record must keep its input so a
+            // later launch can retry preparation after storage recovers.
+            finishWork(job: job)
         }
     }
 

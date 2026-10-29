@@ -27,6 +27,7 @@ enum MediaKind {
 enum JobStatus {
   queued('queued'),
   downloading('downloading'),
+  preparing('preparing'),
   saving('saving'),
   completed('completed'),
   failed('failed'),
@@ -101,12 +102,17 @@ class DownloadJob {
   bool get isActive =>
       status == JobStatus.queued ||
       status == JobStatus.downloading ||
+      status == JobStatus.preparing ||
       status == JobStatus.saving;
 
   bool get isSavable => status == JobStatus.completed;
 
-  /// Fraction in 0..1, or null when the total size is unknown.
+  /// Transfer fraction, or null for unknown size and post-download processing.
   double? get progress {
+    // Transfer completion is not conversion or Photos-import completion.
+    if (status == JobStatus.preparing || status == JobStatus.saving) {
+      return null;
+    }
     if (totalBytes <= 0) return null;
     return (bytesReceived / totalBytes).clamp(0.0, 1.0);
   }

@@ -31,6 +31,8 @@
 		B9148F911839453D86CCE4B0 /* OgParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19C87001E8A64B2DA925938F /* OgParser.swift */; };
 		350ADAD755C24059BA827C31 /* PhotoLibrarySaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8552FE7F2503430F8927AF51 /* PhotoLibrarySaver.swift */; };
 		3A413C341C1744B5A59EFEEF /* PhotoLibrarySaver.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8552FE7F2503430F8927AF51 /* PhotoLibrarySaver.swift */; };
+		A3413C341C1744B5A59EFEEF /* VideoCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = A552FE7F2503430F8927AF51 /* VideoCompatibility.swift */; };
+		B3413C341C1744B5A59EFEEF /* VideoCompatibility.swift in Sources */ = {isa = PBXBuildFile; fileRef = A552FE7F2503430F8927AF51 /* VideoCompatibility.swift */; };
 		B90D3BBC37C943AFA8049566 /* BackgroundSessionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B878C20C7944DE1B9421CC3 /* BackgroundSessionHandler.swift */; };
 		D830A0EC58434E6DB4571BA1 /* BackgroundSessionHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B878C20C7944DE1B9421CC3 /* BackgroundSessionHandler.swift */; };
 		03EBA5558BFD4B7EAC4607EC /* DownloadCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE13B179F2B84E38A6B12181 /* DownloadCoordinator.swift */; };
@@ -104,6 +106,7 @@
 		2CB787AAD1E84A01A018FF96 /* LinkExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkExtractor.swift; sourceTree = "<group>"; };
 		19C87001E8A64B2DA925938F /* OgParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OgParser.swift; sourceTree = "<group>"; };
 		8552FE7F2503430F8927AF51 /* PhotoLibrarySaver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibrarySaver.swift; sourceTree = "<group>"; };
+		A552FE7F2503430F8927AF51 /* VideoCompatibility.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VideoCompatibility.swift; sourceTree = "<group>"; };
 		2B878C20C7944DE1B9421CC3 /* BackgroundSessionHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackgroundSessionHandler.swift; sourceTree = "<group>"; };
 		FE13B179F2B84E38A6B12181 /* DownloadCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadCoordinator.swift; sourceTree = "<group>"; };
 		D500F321083F494291BBDD9C /* MaidlPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MaidlPlugin.swift; sourceTree = "<group>"; };
@@ -204,6 +207,7 @@
 				2CB787AAD1E84A01A018FF96 /* LinkExtractor.swift */,
 				19C87001E8A64B2DA925938F /* OgParser.swift */,
 				8552FE7F2503430F8927AF51 /* PhotoLibrarySaver.swift */,
+				A552FE7F2503430F8927AF51 /* VideoCompatibility.swift */,
 				2B878C20C7944DE1B9421CC3 /* BackgroundSessionHandler.swift */,
 			);
 			name = Shared;
@@ -411,6 +415,7 @@
 				E12DCB1C4BB14E39A89B3F71 /* LinkExtractor.swift in Sources */,
 				68C31A6900D64EBA88EFC0E8 /* OgParser.swift in Sources */,
 				350ADAD755C24059BA827C31 /* PhotoLibrarySaver.swift in Sources */,
+				A3413C341C1744B5A59EFEEF /* VideoCompatibility.swift in Sources */,
 				B90D3BBC37C943AFA8049566 /* BackgroundSessionHandler.swift in Sources */,
 				03EBA5558BFD4B7EAC4607EC /* DownloadCoordinator.swift in Sources */,
 				7C1F3A9619144F9D970F5132 /* MaidlPlugin.swift in Sources */,
@@ -428,6 +433,7 @@
 				ACC71A4E31334FE4810732AF /* LinkExtractor.swift in Sources */,
 				B9148F911839453D86CCE4B0 /* OgParser.swift in Sources */,
 				3A413C341C1744B5A59EFEEF /* PhotoLibrarySaver.swift in Sources */,
+				B3413C341C1744B5A59EFEEF /* VideoCompatibility.swift in Sources */,
 				D830A0EC58434E6DB4571BA1 /* BackgroundSessionHandler.swift in Sources */,
 				A28ACA5B69254B6E8444D61B /* ShareViewController.swift in Sources */,
 			);

@@ -74,6 +74,25 @@ void main() {
       );
       expect(job.progress, 1.0);
     });
+
+    test(
+      'fully downloaded video is still active while preparing for Photos',
+      () {
+        final job = DownloadJob.tryFromMap({
+          'id': 'video',
+          'url': 'https://x.dev/clip.mov',
+          'kind': 'video',
+          'status': 'preparing',
+          'bytesReceived': 1024,
+          'totalBytes': 1024,
+        })!;
+
+        expect(job.status, JobStatus.preparing);
+        expect(job.isActive, isTrue);
+        expect(job.isSavable, isFalse);
+        expect(job.progress, isNull);
+      },
+    );
   });
 
   group('formatBytes', () {

@@ -24,8 +24,11 @@ struct JobRecord: Codable, Equatable {
     var sessionIdentifier: String
     var transferToken: String
 
+    /// Basename in shared incoming storage, retained while conversion can resume.
+    var pendingSourceFile: String?
+
     var isActive: Bool {
-        status == "queued" || status == "downloading" || status == "saving"
+        status == "queued" || status == "downloading" || status == "preparing" || status == "saving"
     }
 
     static func nowMillis() -> Int64 {
@@ -49,7 +52,8 @@ struct JobRecord: Codable, Equatable {
         mediaUrl: String? = nil,
         hops: Int = 0,
         sessionIdentifier: String = SharedConfig.appSessionIdentifier,
-        transferToken: String = UUID().uuidString
+        transferToken: String = UUID().uuidString,
+        pendingSourceFile: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -68,12 +72,13 @@ struct JobRecord: Codable, Equatable {
         self.hops = hops
         self.sessionIdentifier = sessionIdentifier
         self.transferToken = transferToken
+        self.pendingSourceFile = pendingSourceFile
     }
 
     enum CodingKeys: String, CodingKey {
         case id, url, kind, fileName, status, origin, createdAt, updatedAt
         case bytesReceived, totalBytes, error, remoteId, mimeType, mediaUrl, hops
-        case sessionIdentifier, transferToken
+        case sessionIdentifier, transferToken, pendingSourceFile
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +101,7 @@ struct JobRecord: Codable, Equatable {
         hops = try container.decodeIfPresent(Int.self, forKey: .hops) ?? 0
         sessionIdentifier = try container.decode(String.self, forKey: .sessionIdentifier)
         transferToken = try container.decode(String.self, forKey: .transferToken)
+        pendingSourceFile = try container.decodeIfPresent(String.self, forKey: .pendingSourceFile)
     }
 
     /// Contract shared with lib/src/core/downloads_api.dart.

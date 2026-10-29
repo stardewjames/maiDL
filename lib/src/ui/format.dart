@@ -32,6 +32,8 @@ String statusLabel(String wireStatus) {
       return 'Queued';
     case 'downloading':
       return 'Downloading';
+    case 'preparing':
+      return 'Preparing video';
     case 'saving':
       return 'Adding to Photos';
     case 'completed':

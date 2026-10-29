@@ -119,6 +119,56 @@ void main() {
     await api.close();
   });
 
+  testWidgets('video preparation stays cancelable until the Photos commit', (
+    tester,
+  ) async {
+    final api = FakeDownloadsApi(
+      platform: 'ios',
+      photoAccess: PermissionState.granted,
+      jobs: [_job('convert', status: JobStatus.preparing)],
+      canOpenSaved: false,
+    );
+    final controller = DownloadController(api);
+    await tester.pumpWidget(MaidlApp(controller: controller));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    final indicator = tester.widget<LinearProgressIndicator>(
+      find.byType(LinearProgressIndicator),
+    );
+    expect(indicator.value, isNull);
+    expect(controller.activeJobs.single.status, JobStatus.preparing);
+
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.tap(find.text('Cancel'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    expect(controller.jobs.single.status, JobStatus.canceled);
+
+    api.emit(_job('commit', status: JobStatus.saving));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+    // Already-submitted Photos changes cannot be withdrawn.
+    expect(find.byTooltip('More actions'), findsOneWidget);
+    // The only remaining menu belongs to the canceled download, not the commit.
+    final committingCard = find.ancestor(
+      of: find.text('commit.mp4'),
+      matching: find.byType(Card),
+    );
+    expect(
+      find.descendant(
+        of: committingCard,
+        matching: find.byTooltip('More actions'),
+      ),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+    controller.dispose();
+    await api.close();
+  });
+
   testWidgets('fits a small phone without layout overflows', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1.0;

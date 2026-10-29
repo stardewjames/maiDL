@@ -77,7 +77,7 @@ class JobCard extends StatelessWidget {
                     onRetry: onRetry,
                     onCancel: onCancel,
                     onOpen: onOpen,
-                    onRemove: onRemove,
+                    onRemove: job.status == JobStatus.saving ? null : onRemove,
                   ),
                 ],
               ),
@@ -112,6 +112,7 @@ class JobCard extends StatelessWidget {
       case JobStatus.failed:
       case JobStatus.canceled:
         parts.add(formatRelative(job.updatedAt));
+      case JobStatus.preparing:
       case JobStatus.saving:
         parts.add(formatBytes(job.bytesReceived));
       case JobStatus.downloading:
@@ -283,7 +284,8 @@ class _Menu extends StatelessWidget {
     final canRetry =
         (job.status == JobStatus.failed || job.status == JobStatus.canceled) &&
         onRetry != null;
-    final canCancel = job.isActive && onCancel != null;
+    final canCancel =
+        job.isActive && job.status != JobStatus.saving && onCancel != null;
     final canOpen = job.isSavable && canOpenSaved && onOpen != null;
 
     if (!canRetry && !canCancel && !canOpen && onRemove == null) {

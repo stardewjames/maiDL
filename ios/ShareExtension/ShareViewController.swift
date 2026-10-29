@@ -212,8 +212,8 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        titleLabel.text = "Saving in the background"
-        messageLabel.text = "maiDL will finish this on its own. You can close this sheet."
+        titleLabel.text = "Download queued"
+        messageLabel.text = "You can close this sheet. Open maiDL to finish preparing the video if iOS pauses it."
         spinner.stopAnimating()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
             self?.complete()

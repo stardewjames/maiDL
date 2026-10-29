@@ -138,15 +138,30 @@ final class JobStore {
         all().first { $0.isActive && $0.url == url }
     }
 
-    func removeIncomingFiles(for id: String) {
+    func removeIncomingFiles(for id: String, transferToken: String? = nil) {
         guard let directory = try? incomingDirectory(),
               let urls = try? fileManager.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: nil
               )
         else { return }
-        for url in urls where url.lastPathComponent.hasPrefix("\(id).") {
+        let prefix = transferToken.map { "\(id).\($0)." } ?? "\(id)."
+        for url in urls where url.lastPathComponent.hasPrefix(prefix) {
             try? fileManager.removeItem(at: url)
         }
+    }
+
+    func pendingSourceURL(for job: JobRecord) throws -> URL {
+        guard let name = job.pendingSourceFile,
+              (name as NSString).lastPathComponent == name,
+              name.hasPrefix("\(job.id).\(job.transferToken)."),
+              !name.contains("/") && !name.contains("\\")
+        else {
+            throw LinkError(
+                code: "video_source_missing",
+                message: "The downloaded video is unavailable. Tap Try again."
+            )
+        }
+        return try incomingDirectory().appendingPathComponent(name)
     }
 
     /// A suspended extension still owns its URLSession. Only attach after its

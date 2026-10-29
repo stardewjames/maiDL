@@ -102,9 +102,12 @@ class SettingsPage extends StatelessWidget {
                     children: [
                       _SupportLine(
                         icon: Icons.check_circle_outline_rounded,
-                        text:
-                            'Direct video and image links. Importing a file '
-                            'depends on the formats your Photos or gallery app supports.',
+                        text: isIos
+                            ? 'Videos are prepared as MP4 with H.264 video and '
+                                  'AAC audio when present. Damaged or unsupported '
+                                  'inputs are rejected.'
+                            : 'Direct video and image links. Importing a file '
+                                  'depends on the formats your gallery app supports.',
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 10),

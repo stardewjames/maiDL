@@ -71,6 +71,7 @@ final class DownloadCoordinator {
             current.remoteId = nil
             current.mediaUrl = nil
             current.hops = 0
+            current.pendingSourceFile = nil
             current.bytesReceived = 0
             current.totalBytes = -1
             current.sessionIdentifier = SharedConfig.appSessionIdentifier
@@ -78,7 +79,7 @@ final class DownloadCoordinator {
             current.updatedAt = JobRecord.nowMillis()
             return true
         }) else { return store.get(id: id) ?? existing }
-        store.removeIncomingFiles(for: id)
+        store.removeIncomingFiles(for: id, transferToken: existing.transferToken)
         return try startOrRequestAccess(job, using: handler, access: access)
     }
 
@@ -89,6 +90,7 @@ final class DownloadCoordinator {
             guard current.isActive, current.status != "saving" else { return false }
             current.status = "canceled"
             current.error = nil
+            current.pendingSourceFile = nil
             current.updatedAt = JobRecord.nowMillis()
             return true
         }) else { return }
@@ -100,9 +102,10 @@ final class DownloadCoordinator {
     }
 
     func remove(id: String) throws {
+        let existing = store.get(id: id)
         try cancel(id: id)
         try store.remove(id: id)
-        store.removeIncomingFiles(for: id)
+        if let existing { cleanupFinishedSource(job: existing) }
     }
 
     func clearHistory() throws {
@@ -118,6 +121,18 @@ final class DownloadCoordinator {
     }
 
     // MARK: - Helpers
+
+    /// Do not unlink a source/output while this or another process is still
+    /// exporting it. Its owner cancels and cleans up after export terminates.
+    private func cleanupFinishedSource(job: JobRecord) {
+        if let handler = handlers[job.sessionIdentifier] {
+            handler.cancel(job: job)
+        } else if let ownership = try? store.claimSession(identifier: job.sessionIdentifier) {
+            withExtendedLifetime(ownership) {
+                store.removeIncomingFiles(for: job.id, transferToken: job.transferToken)
+            }
+        }
+    }
 
     private func photoAccess() throws -> String {
         let access = PhotoLibrarySaver.accessStatus()
@@ -205,6 +220,12 @@ final class DownloadCoordinator {
         else { return nil }
         handler.onJobUpdate = { [weak self] job in self?.emit(job) }
         handlers[identifier] = handler
+        // Ownership can become available after the app's initial reconcile,
+        // including during a background URLSession relaunch.
+        for job in store.all()
+            where job.status == "preparing" && job.sessionIdentifier == identifier {
+            handler.resumePreparation(job: job)
+        }
         return handler
     }
 
@@ -215,11 +236,15 @@ final class DownloadCoordinator {
         }
     }
 
-    /// Only inspect sessions we can safely own. Include asynchronous Photos
-    /// work and permission prompts, and recheck the record before repairing it.
+    /// Only inspect sessions we can safely own. Include asynchronous preparation,
+    /// Photos work and permission prompts; recheck before repairing a record.
     func reconcile() {
         _ = try? ensureHandler(identifier: SharedConfig.appSessionIdentifier)
-        let snapshot = store.all().filter { $0.isActive }
+        let records = store.all()
+        for job in records where !job.isActive {
+            cleanupFinishedSource(job: job)
+        }
+        let snapshot = records.filter { $0.isActive }
         for identifier in Set(snapshot.map { $0.sessionIdentifier }) {
             do {
                 _ = try ensureHandler(identifier: identifier)
@@ -228,6 +253,9 @@ final class DownloadCoordinator {
             }
         }
         let owned = handlers
+        for job in snapshot where job.status == "preparing" {
+            owned[job.sessionIdentifier]?.resumePreparation(job: job)
+        }
         let live = LiveIds()
         let group = DispatchGroup()
         for handler in owned.values {
@@ -245,6 +273,7 @@ final class DownloadCoordinator {
                 guard owned[job.sessionIdentifier] != nil,
                       !liveIds.contains(job.id),
                       !self.pendingPermissionJobs.contains(job.id),
+                      job.status != "preparing",
                       now - job.updatedAt >= 60_000
                 else { continue }
                 do {
@@ -255,10 +284,12 @@ final class DownloadCoordinator {
                         else { return false }
                         current.status = "failed"
                         current.error = "The download was interrupted. Tap Try again."
+                        current.pendingSourceFile = nil
                         current.updatedAt = JobRecord.nowMillis()
                         return true
                     }) {
                         self.emit(failed)
+                        self.store.removeIncomingFiles(for: job.id, transferToken: job.transferToken)
                     }
                 } catch {
                     NSLog("maiDL could not repair download history: %@", error.localizedDescription)

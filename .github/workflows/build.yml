@@ -87,6 +87,8 @@ jobs:
           cache: true
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
+      - name: Smoke test native iOS video compatibility
+        run: bash tool/verify_ios_video.sh
       - name: Build unsigned iOS release
         run: flutter build ios --release --no-codesign --build-number "$GITHUB_RUN_NUMBER"
       - name: Verify embedded extension and matching versions
