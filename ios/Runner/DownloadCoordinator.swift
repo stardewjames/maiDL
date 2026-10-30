@@ -1,5 +1,6 @@
 import Foundation
 import Photos
+import UIKit
 
 /// App-side queue owner. A process lease prevents attaching to a URLSession
 /// that is still owned by a running or suspended share extension.
@@ -19,12 +20,32 @@ final class DownloadCoordinator {
         reconcile()
     }
 
+    /// Imports a link handed over by the share extension when App Groups are
+    /// unavailable. The extension writes a custom pasteboard type, so the app
+    /// only reads clipboard contents after an actual share.
+    func importSharedLinkIfNeeded() {
+        let pasteboard = UIPasteboard.general
+        let type = SharedConfig.handoffPasteboardType
+        guard pasteboard.contains(pasteboardTypes: [type]),
+              let value = pasteboard.value(forPasteboardType: type)
+        else { return }
+        let raw = (value as? String)
+            ?? (value as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        pasteboard.items = []
+        guard let link = raw, !link.isEmpty else { return }
+        do {
+            _ = try enqueue(rawLink: link, origin: "share")
+        } catch {
+            NSLog("maiDL could not import the shared link: %@", error.localizedDescription)
+        }
+    }
+
     @discardableResult
     func handleEventsForBackgroundURLSession(
         identifier: String,
         completionHandler: @escaping () -> Void
     ) -> Bool {
-        guard identifier == SharedConfig.appSessionIdentifier
+        guard SharedConfig.isAppSessionIdentifier(identifier)
             || SharedConfig.isShareSessionIdentifier(identifier)
         else { return false }
         do {
@@ -213,7 +234,7 @@ final class DownloadCoordinator {
 
     private func ensureHandler(identifier: String) throws -> BackgroundSessionHandler? {
         if let handler = handlers[identifier] { return handler }
-        guard identifier == SharedConfig.appSessionIdentifier
+        guard SharedConfig.isAppSessionIdentifier(identifier)
             || SharedConfig.isShareSessionIdentifier(identifier)
         else { return nil }
         guard let handler = try BackgroundSessionHandler(identifier: identifier)

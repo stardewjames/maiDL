@@ -1,7 +1,9 @@
 import Darwin
 import Foundation
 
-/// Atomic records plus a cross-process mutation lock in the App Group.
+/// Atomic records plus a cross-process mutation lock. Uses the App Group when
+/// the signature grants one, otherwise the app's own Application Support
+/// directory so downloads entered in the app still work.
 final class JobStore {
     static let shared = JobStore()
 
@@ -9,17 +11,21 @@ final class JobStore {
     private let queue = DispatchQueue(label: "app.maidl.jobstore")
 
     private func root() throws -> URL {
-        guard let container = fileManager.containerURL(
+        let directory: URL
+        if let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: SharedConfig.appGroup
-        ) else {
-            throw LinkError(
-                code: "storage_unavailable",
-                message: "maiDL's shared storage is unavailable. Check the App Group entitlement."
+        ) {
+            directory = container.appendingPathComponent(
+                "Library/Application Support/maidl", isDirectory: true
             )
+        } else {
+            directory = try fileManager.url(
+                for: .applicationSupportDirectory,
+                in: .userDomainMask,
+                appropriateFor: nil,
+                create: true
+            ).appendingPathComponent("maidl", isDirectory: true)
         }
-        let directory = container.appendingPathComponent(
-            "Library/Application Support/maidl", isDirectory: true
-        )
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         return directory
     }

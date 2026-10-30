@@ -61,7 +61,7 @@ A **Mac with Xcode, Apple SDKs and signing credentials is required**. iOS source
 
 1. Run `flutter pub get`, then open `ios/Runner.xcworkspace` in Xcode.
 2. Choose your signing team for both **Runner** and **ShareExtension**. Current bundle IDs are `app.maidl` and `app.maidl.ShareExtension`; use unique IDs for distribution.
-3. Register/enable the **App Groups** capability on both targets with `group.app.maidl`. Provisioning profiles must include that entitlement. If renaming the group, update both entitlements and `ios/Shared/SharedConfig.swift` together.
+3. Register/enable the **App Groups** capability on both targets with `group.app.maidl`. Provisioning profiles must include that entitlement. If renaming the group, update both entitlements and `ios/Shared/SharedConfig.swift` together. This is required only for the seamless share-sheet flow; builds without the entitlement use the fallback described below.
 4. Build the **Runner** scheme. The project already declares the extension dependency, shared-source membership, and **Embed App Extensions** phase; do not create a second extension target.
 5. Install, open maiDL and allow add-only Photos access. In another app, share a public media URL, choose maiDL (enable it under the share sheet's More/Edit options if necessary), then return to the original app. Confirm the media eventually appears in Photos and the job finishes in history.
 
@@ -78,6 +78,15 @@ cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/Runner.app
 
 The resulting `build/ipa/maidl-unsigned.ipa` contains the app and its embedded extension. It is unsigned, so re-sign it with your Apple team and provisioning profiles (for example with Sideloadly or AltStore) before installing; TestFlight/App Store upload requires a normally signed build.
 
+### Running without the App Group entitlement
+
+maiDL checks at runtime whether `group.app.maidl` resolves. If the signing profile does not grant it, the app:
+
+- stores jobs in its own `Application Support/maidl` directory instead of the shared container, so links entered in the app download normally;
+- makes the share extension copy the normalized link to a custom pasteboard type and ask you to open maiDL, which imports the link when it becomes active.
+
+The share flow therefore requires opening maiDL manually in this mode: iOS does not let a share extension launch its containing app without shared storage. Background transfers, video preparation and Photos saving still run in the app. When a signed build grants `group.app.maidl`, both processes switch back to the shared queue automatically; there is no toggle to set.
+
 The app never needs read access to the entire Photos library. There is no public per-asset API for opening the Photos app, so iOS history does not offer Android's Open action.
 
 ## GitHub builds
@@ -88,9 +97,9 @@ Open [Actions → Build mobile apps](https://github.com/stardewjames/maiDL/actio
 `.github/workflows/build.yml` runs on pushes to `main`, pull requests, **Run workflow**, and tags matching `v*`. Flutter is pinned to `3.47.8`; third-party actions are pinned to commit hashes. No signing secrets are needed. For tag builds the tag without the leading `v` becomes the app version, so `v1.0.0` builds `1.0.0`; a semver suffix such as `-rc.1` only marks the GitHub prerelease, keeping the app version numeric for Apple.
 
 - **Android** uses Ubuntu and Java 17, resolves locked dependencies, analyzes/tests Flutter, builds a release APK, and runs the native JVM tests. Artifacts: `maidl-android-<run number>` (`app-release.apk`) and `maidl-android-tests-<run number>`.
-- **iOS** uses a macOS runner with Xcode. First, `bash tool/verify_ios_video.sh` generates fixtures and compiles/runs the shipping AVFoundation preparation helper. It verifies unchanged MP4, lossless MOV remux, disguised MOV, HEVC and ProRes/PCM conversion, rotation, silent video, invalid input and cancellation. Then it builds `Runner.app` plus its embedded share extension with `--no-codesign`, checks matching app/extension versions, and packages `maidl-<version>-ios-unsigned.ipa` in `Payload/` layout with the extension inside. Artifact: `maidl-ios-<run number>`.
+- **iOS** uses a macOS runner with Xcode. It compiles the shipping storage code and verifies the no-App-Group job store with `bash tool/verify_ios_storage.sh`, then `bash tool/verify_ios_video.sh` generates fixtures and compiles/runs the shipping AVFoundation preparation helper. It verifies unchanged MP4, lossless MOV remux, disguised MOV, HEVC and ProRes/PCM conversion, rotation, silent video, invalid input and cancellation. Then it builds `Runner.app` plus its embedded share extension with `--no-codesign`, checks matching app/extension versions, and packages `maidl-<version>-ios-unsigned.ipa` in `Payload/` layout with the extension inside. Artifact: `maidl-ios-<run number>`.
 
-Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The iOS IPA is unsigned, so it must be re-signed with your Apple team, a signing certificate and matching provisioning profiles for both the app and extension, including the App Group capability before installing or uploading.** Do not commit certificates, profiles or Android keystores.
+Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The iOS IPA is unsigned, so it must be re-signed with your Apple team, a signing certificate and matching provisioning profiles for both the app and extension before installing or uploading.** Include the App Group capability only if you want the seamless share flow; without it maiDL uses the app-local/clipboard fallback. Do not commit certificates, profiles or Android keystores.
 
 ### Releases
 
@@ -127,7 +136,7 @@ flowchart LR
 - `lib/src/core`: job model, link parsing, channel API and UI state mirror.
 - `lib/src/ui`: link entry, job cards, permissions and history settings.
 - `android/app/src/main/kotlin/app/maidl`: share intake, queue, worker, HTTP transfer and MediaStore publication.
-- `ios/Shared`: App Group job records, link/media resolution, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
+- `ios/Shared`: job records (App Group when entitled, app-local otherwise), link/media resolution, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
 - `ios/Runner`: background event routing and Flutter channels.
 - `ios/ShareExtension`: lightweight share-sheet UI and intake.
 
@@ -141,6 +150,7 @@ flutter test
 # From android/ (use gradlew.bat on Windows):
 ./gradlew :app:testDebugUnitTest :app:assembleRelease
 # From repository root on macOS with Xcode (installs FFmpeg via Homebrew if absent):
+bash tool/verify_ios_storage.sh
 bash tool/verify_ios_video.sh
 ```
 

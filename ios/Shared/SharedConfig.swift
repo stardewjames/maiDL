@@ -5,8 +5,32 @@ enum SharedConfig {
     /// declare it in their entitlements.
     static let appGroup = "group.app.maidl"
 
-    /// Identifier for downloads started from the app UI.
-    static let appSessionIdentifier = "app.maidl.downloads.app"
+    /// Set when a signing profile cannot grant App Groups. Job state then lives
+    /// in the app's own container, and the extension hands links over through
+    /// the pasteboard instead of a shared directory.
+    static var hasAppGroup: Bool {
+        FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroup
+        ) != nil
+    }
+
+    /// Custom pasteboard type used for the share-extension handoff. The app
+    /// checks for this type before reading clipboard contents.
+    static let handoffPasteboardType = "app.maidl.share-link"
+
+    /// Identifier for downloads started from the app UI. A separate identifier
+    /// is used without an App Group so a session created under a different
+    /// signing configuration is never silently reused.
+    private static let sharedAppSessionIdentifier = "app.maidl.downloads.app"
+    private static let localAppSessionIdentifier = "app.maidl.downloads.app.local"
+
+    static var appSessionIdentifier: String {
+        hasAppGroup ? sharedAppSessionIdentifier : localAppSessionIdentifier
+    }
+
+    static func isAppSessionIdentifier(_ identifier: String) -> Bool {
+        identifier == sharedAppSessionIdentifier || identifier == localAppSessionIdentifier
+    }
 
     /// Each share owns a fresh session; a later extension invocation must not
     /// attach to a session that the containing app has already adopted.
@@ -28,7 +52,9 @@ enum SharedConfig {
 enum BackgroundSessionConfig {
     static func make(identifier: String) -> URLSessionConfiguration {
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
-        configuration.sharedContainerIdentifier = SharedConfig.appGroup
+        if SharedConfig.hasAppGroup {
+            configuration.sharedContainerIdentifier = SharedConfig.appGroup
+        }
         configuration.sessionSendsLaunchEvents = true
         configuration.isDiscretionary = false
         configuration.waitsForConnectivity = true

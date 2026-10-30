@@ -3,9 +3,11 @@ import UniformTypeIdentifiers
 
 /// Share sheet entry point.
 ///
-/// It extracts the link, persists a job in the App Group, starts a background
-/// transfer, and dismisses itself. The containing app is relaunched by iOS when
-/// the transfer finishes, then adds the file to Photos.
+/// With an App Group it persists a job, starts a background transfer, and
+/// dismisses itself. Without one it copies the normalized link to a custom
+/// pasteboard type; the containing app imports it the next time it becomes
+/// active. iOS does not let a share extension launch its containing app
+/// without shared storage.
 final class ShareViewController: UIViewController {
     private let spinner = UIActivityIndicatorView(style: .medium)
     private let titleLabel = UILabel()
@@ -123,7 +125,11 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async {
             do {
                 let url = try LinkExtractor.parse(text)
-                self.beginDownload(url)
+                if SharedConfig.hasAppGroup {
+                    self.beginDownload(url)
+                } else {
+                    self.handOff(url)
+                }
             } catch let error as LinkError {
                 self.showError(error.message)
             } catch {
@@ -137,6 +143,23 @@ final class ShareViewController: UIViewController {
         if let url = item as? NSURL { return url as URL }
         if let string = item as? String { return LinkExtractor.firstURL(in: string) }
         return nil
+    }
+
+    // MARK: - Handoff
+
+    /// No shared container: leave the link where the app can pick it up. The
+    /// pasteboard is the only channel available without an entitlement.
+    private func handOff(_ url: URL) {
+        let normalized = LinkExtractor.normalize(url)
+        let item: [String: Any] = [
+            SharedConfig.handoffPasteboardType: normalized.absoluteString
+        ]
+        UIPasteboard.general.items = [item]
+        spinner.stopAnimating()
+        titleLabel.text = "Link ready for maiDL"
+        messageLabel.text = "Open maiDL to start the download. The link is on the clipboard."
+        doneButton.setTitle("Done", for: .normal)
+        doneButton.isHidden = false
     }
 
     // MARK: - Transfer
