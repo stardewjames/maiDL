@@ -194,23 +194,23 @@ jobs:
           set -euo pipefail
           tag="$GITHUB_REF_NAME"
           version="${tag#v}"
-          asset_version="${version%%-*}"
           apk=build/release/android/app-release.apk
           ipa=$(find build/release/ios -maxdepth 1 -name '*.ipa' -print -quit)
           test -f "$apk"
           test -n "$ipa" && test -f "$ipa"
-          cp "$apk" "build/release/maidl-${asset_version}-android.apk"
+          cp "$apk" "build/release/maidl-${version}-android.apk"
+          cp "$ipa" "build/release/maidl-${version}-ios-unsigned.ipa"
           prerelease=()
           if [[ "$RELEASE_PRERELEASE" == "true" || "$version" == *-* ]]; then
             prerelease=(--prerelease)
           fi
           if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$tag" \
-              "build/release/maidl-${asset_version}-android.apk" "$ipa" \
+              "build/release/maidl-${version}-android.apk" "build/release/maidl-${version}-ios-unsigned.ipa" \
               --repo "$GITHUB_REPOSITORY" --clobber
           else
             gh release create "$tag" \
-              "build/release/maidl-${asset_version}-android.apk" "$ipa" \
+              "build/release/maidl-${version}-android.apk" "build/release/maidl-${version}-ios-unsigned.ipa" \
               --repo "$GITHUB_REPOSITORY" \
               --title "maiDL ${version}" \
               --generate-notes \
