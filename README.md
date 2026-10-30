@@ -182,11 +182,12 @@ Verification performed locally and in [the successful hosted build](https://gith
 | Android release assembly | Passed |
 | Kotlin downloader live smoke | Downloaded a 30,320-byte WebP over HTTPS; RIFF/WebP signature verified |
 | Flutter UI browser smoke | Phone-size rendering, invalid-link feedback, Settings, and cancelable “Preparing video” vs. non-cancelable “Adding to Photos” exercised |
-| iOS video preparation (macOS AVFoundation) | Compatible MP4 kept byte-identical; H.264/AAC MOV remuxed without re-encoding; disguised MOV, HEVC, ProRes/PCM, rotated and silent sources converted to verified H.264/AAC MP4; corrupt and audio-only input rejected; cancellation leaves no output |
+| iOS video preparation (macOS AVFoundation) | Compatible MP4 kept byte-identical; H.264/AAC MOV remuxed without re-encoding; disguised MOV, HEVC, ProRes/PCM, rotated and silent sources converted to verified H.264/AAC MP4; fragmented MP4 prepared; corrupt and audio-only input rejected; cancellation leaves no output |
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
 | iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
 | Social resolver parsing | Android JVM tests cover supported hosts, Cobalt tunnel/picker/error responses, yt-dlp responses and invalid endpoints |
+| yt-dlp service smoke | Local direct-URL proxy round-trip matched bytes; YouTube adaptive stream resolved and merged to a playable fragmented MP4 via ffmpeg |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | App Group-less share handoff | Not run: requires a signed sideloaded device; storage and compile paths verified |
