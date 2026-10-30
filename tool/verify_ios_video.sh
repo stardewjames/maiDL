@@ -50,6 +50,10 @@ ffmpeg -hide_banner -loglevel error -nostdin -y \
   -i "$work_dir/hevc-aac.mp4" -map 0:v:0 -c copy -an "$work_dir/silent-hevc.mp4"
 ffmpeg -hide_banner -loglevel error -nostdin -y \
   -i "$work_dir/h264-aac.mp4" -map 0:a:0 -c copy -vn "$work_dir/audio-only.m4a"
+# YouTube-style adaptive merge output: fragmented MP4.
+ffmpeg -hide_banner -loglevel error -nostdin -y \
+  -i "$work_dir/h264-aac.mp4" -map 0 -c copy \
+  -movflags frag_keyframe+empty_moov "$work_dir/fragmented.mp4"
 printf 'not an audiovisual container\n' > "$work_dir/corrupt.mp4"
 
 # Compile the shipping implementation, not a test double or a copied converter.

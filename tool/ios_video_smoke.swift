@@ -117,6 +117,28 @@ private enum VideoSmoke {
             print("PASS: \(item.name)\(item.passthrough ? " (byte-identical fast path)" : " -> H.264/AAC MP4")")
         }
 
+        let fragmentedInput = directory.appendingPathComponent("fragmented.mp4")
+        let fragmentedOutput = directory.appendingPathComponent("prepared-fragmented.mp4")
+        let fragmentedSource = AVURLAsset(url: fragmentedInput)
+        let fragmentedProbe = try probe(fragmentedInput, ffprobe: ffprobe)
+        try require(fragmentedProbe.videos.count == 1, "fragmented.mp4: invalid video fixture")
+        let fragmentedTrack = try videoTrack(fragmentedSource, label: "fragmented.mp4")
+        let fragmentedSize = displaySize(fragmentedTrack)
+        let fragmentedResult = await prepare(fragmentedInput, fragmentedOutput)
+        switch fragmentedResult {
+        case .success(let url):
+            try validate(
+                url,
+                source: fragmentedSource,
+                sourceSize: fragmentedSize,
+                hasAudio: true,
+                ffprobe: ffprobe
+            )
+            print("PASS: fragmented MP4 prepared as H.264/AAC")
+        case .failure(let error):
+            throw SmokeFailure("fragmented.mp4: prepare failed: \(error)")
+        }
+
         for name in ["corrupt.mp4", "audio-only.m4a"] {
             let input = directory.appendingPathComponent(name)
             let output = directory.appendingPathComponent("rejected-\(name).mp4")

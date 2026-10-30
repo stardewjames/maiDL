@@ -7,7 +7,9 @@ working.
 
 ## Run
 
-Requires Python 3.10+.
+Requires Python 3.10+ and `ffmpeg` on `PATH` for sources that expose separate
+video and audio streams (YouTube). Without ffmpeg, those links fail but
+single-file sources still work.
 
 ```sh
 python3 -m pip install -r tool/resolver/requirements.txt
@@ -33,9 +35,12 @@ MAIDL_YTDLP_COOKIES=/path/to/cookies.txt python3 tool/resolver/server.py
   `{"url": "http://<host>/media/<token>", "fileName": "..."}`.
 - `GET /media/<token>` streams the source, forwarding `Range` so interrupted
   downloads can resume.
-- The service picks a single-file progressive format when available
-  (`best[acodec!=none][vcodec!=none]`), falling back to the best HTTP format.
-  YouTube progressive streams are usually 360p; use Cobalt if you need its
-  instance's format support.
+- The service proxies a single-file progressive format when available. When a
+  source exposes separate video/audio streams (YouTube), it pipes
+  `ffmpeg -c copy` as a fragmented MP4 so playback can start immediately.
+  Fragmented output has no resumable byte ranges; an interrupted download
+  restarts.
+- YouTube chooses H.264 MP4 video plus AAC audio when available. Other codecs
+  may not be accepted by Photos; use Cobalt if its instance covers your source.
 - Tokens expire after 30 minutes. Private/login-gated sources need cookies;
   DRM and live streams are not supported.

@@ -33,7 +33,7 @@ This targets broadly supported iOS media formats, not a guarantee that every fil
 Settings → **Social links** chooses how TikTok, Instagram, YouTube/Shorts and X/Twitter links are turned into media URLs:
 
 - **Off** (default): only direct media and pages exposing media metadata work.
-- **yt-dlp service**: run the small companion service from `tool/resolver/` on a computer the phone can reach, then enter its URL, for example `http://192.168.1.20:8080`. See `tool/resolver/README.md`. The service extracts with yt-dlp and streams the file back through itself, which handles YouTube's signed, IP-bound URLs and referrer restrictions.
+- **yt-dlp service**: run the small companion service from `tool/resolver/` on a computer the phone can reach, then enter its URL, for example `http://192.168.1.20:8080`. See `tool/resolver/README.md`. The service extracts with yt-dlp and streams the file back through itself, which handles YouTube's signed, IP-bound URLs and referrer restrictions. It needs `ffmpeg` on the server for YouTube-style separate video/audio streams; those are streamed as fragmented MP4.
 - **Cobalt API**: enter a cobalt.tools-compatible API base URL, for example `https://api.cobalt.tools`. The app sends the social link to Cobalt and downloads the URL it returns.
 
 Only those four platforms' hosts are sent to the resolver; direct media URLs bypass it. Resolution happens before the transfer and appears as **Resolving link** in history. A failure leaves the job in history with the resolver's error and can be retried.

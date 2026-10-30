@@ -21,6 +21,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import uuid
@@ -54,7 +55,7 @@ def safe_filename(info: dict, fmt: dict) -> str:
     return base[:120]
 
 
-def pick_format(info: dict) -> dict:
+def pick_progressive(info: dict) -> dict | None:
     formats = info.get("formats") or []
     candidates = [
         fmt
@@ -68,23 +69,31 @@ def pick_format(info: dict) -> dict:
         if fmt.get("vcodec") not in (None, "none")
         and fmt.get("acodec") not in (None, "none")
     ]
-    pool = progressive or candidates
-    if not pool:
-        raw = info.get("url")
-        if not raw:
-            raise ValueError("no downloadable media found")
-        return {"url": raw, "ext": info.get("ext") or "mp4"}
-    return max(pool, key=lambda fmt: fmt.get("height") or 0)
+    if progressive:
+        return max(progressive, key=lambda fmt: fmt.get("height") or 0)
+    if candidates:
+        return max(candidates, key=lambda fmt: fmt.get("height") or 0)
+    return None
 
 
 def extract(url: str) -> tuple[dict, dict]:
+    """Returns (info, token payload).
+
+    The payload is either a single proxied URL or two inputs that ffmpeg merges
+    while streaming. YouTube now serves vcodec/acodec separately, so merging is
+    required for an audio track.
+    """
     options = {
         "quiet": True,
         "no_warnings": True,
         "skip_download": True,
         "noplaylist": True,
         "socket_timeout": 30,
-        "format": "best[acodec!=none][vcodec!=none]/best",
+        "format": (
+            "bestvideo[vcodec^=avc1][ext=mp4]+bestaudio[ext=m4a]/"
+            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
+            "best[acodec!=none][vcodec!=none]/best"
+        ),
     }
     cookies = os.environ.get("MAIDL_YTDLP_COOKIES")
     if cookies:
@@ -99,9 +108,37 @@ def extract(url: str) -> tuple[dict, dict]:
             raise ValueError("the link contains no media")
         info = entries[0]
 
-    fmt = pick_format(info)
+    requested = info.get("requested_formats") or []
+    if len(requested) >= 2:
+        filename = safe_filename(info, {"ext": "mp4"})
+        return info, {
+            "kind": "merge",
+            "inputs": [
+                {
+                    "url": fmt["url"],
+                    "headers": fmt.get("http_headers")
+                    or info.get("http_headers")
+                    or {},
+                }
+                for fmt in requested
+                if fmt.get("url")
+            ],
+            "filename": filename,
+        }
+
+    fmt = pick_progressive(info)
+    if fmt is None:
+        raw = info.get("url")
+        if not raw:
+            raise ValueError("no downloadable media found")
+        fmt = {"url": raw, "ext": info.get("ext") or "mp4"}
     headers = fmt.get("http_headers") or info.get("http_headers") or {}
-    return info, {**fmt, "http_headers": headers}
+    return info, {
+        "kind": "proxy",
+        "url": fmt["url"],
+        "headers": headers,
+        "filename": safe_filename(info, fmt),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -146,12 +183,7 @@ class Handler(BaseHTTPRequestHandler):
             f"{self.server.server_address[0]}:{self.server.server_address[1]}"
         )
         proto = self.headers.get("X-Forwarded-Proto", "http")
-        TOKENS[token] = {
-            "url": fmt["url"],
-            "headers": fmt.get("http_headers") or {},
-            "filename": safe_filename(info, fmt),
-            "created": time.time(),
-        }
+        TOKENS[token] = {**fmt, "created": time.time()}
         self._json(
             200,
             {
@@ -176,8 +208,13 @@ class Handler(BaseHTTPRequestHandler):
         if entry is None:
             self._json(404, {"error": {"code": "expired"}})
             return
+        if entry.get("kind") == "merge":
+            self._merge(entry, head_only=head_only)
+            return
+        self._direct(entry, head_only=head_only)
 
-        headers = dict(entry["headers"])
+    def _direct(self, entry: dict, head_only: bool) -> None:
+        headers = dict(entry.get("headers") or {})
         range_header = self.headers.get("Range")
         if range_header:
             headers["Range"] = range_header
@@ -213,6 +250,75 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if not head_only:
                 shutil.copyfileobj(upstream, self.wfile, 64 * 1024)
+
+    def _merge(self, entry: dict, head_only: bool) -> None:
+        if head_only:
+            self.send_response(200)
+            self.send_header("Content-Type", "video/mp4")
+            self.send_header(
+                "Content-Disposition",
+                f'attachment; filename="{entry["filename"]}"',
+            )
+            self.end_headers()
+            return
+
+        ffmpeg = os.environ.get("FFMPEG", "ffmpeg")
+        command = [ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
+        for item in entry.get("inputs") or []:
+            headers = item.get("headers") or {}
+            forwarded = [
+                f"{name}: {headers[name]}\r\n"
+                for name in ("User-Agent", "Referer", "Accept-Language")
+                if headers.get(name)
+            ]
+            if forwarded:
+                command += ["-headers", "".join(forwarded)]
+            command += ["-i", item["url"]]
+        command += [
+            "-c", "copy",
+            "-movflags", "frag_keyframe+empty_moov",
+            "-f", "mp4",
+            "pipe:1",
+        ]
+        try:
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+        except FileNotFoundError:
+            self._json(502, {"error": {"code": "ffmpeg_missing"}})
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "video/mp4")
+        self.send_header(
+            "Content-Disposition",
+            f'attachment; filename="{entry["filename"]}"',
+        )
+        self.end_headers()
+        try:
+            assert process.stdout is not None
+            while True:
+                chunk = process.stdout.read(64 * 1024)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
+            pass
+        finally:
+            if process.poll() is None:
+                process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+            if process.returncode not in (0, -15, 1):
+                error = b""
+                if process.stderr is not None:
+                    error = process.stderr.read()[-1000:]
+                sys.stderr.write(f"merge failed: {error!r}\n")
 
 
 def main() -> None:
