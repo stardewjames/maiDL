@@ -85,7 +85,7 @@ maiDL checks at runtime whether `group.app.maidl` resolves. If the signing profi
 - stores jobs in its own `Application Support/maidl` directory instead of the shared container, so links entered in the app download normally;
 - makes the share extension copy the normalized link to a custom pasteboard type and ask you to open maiDL, which imports the link when it becomes active.
 
-The share flow therefore requires opening maiDL manually in this mode: iOS does not let a share extension launch its containing app without shared storage. Background transfers, video preparation and Photos saving still run in the app. When a signed build grants `group.app.maidl`, both processes switch back to the shared queue automatically; there is no toggle to set.
+The share flow therefore requires opening maiDL manually in this mode: iOS does not let a share extension launch its containing app without shared storage. iOS may ask you to allow pasting when maiDL reads the handoff. Background transfers, video preparation and Photos saving still run in the app. When a signed build grants `group.app.maidl`, both processes switch back to the shared queue automatically; there is no toggle to set.
 
 The app never needs read access to the entire Photos library. There is no public per-asset API for opening the Photos app, so iOS history does not offer Android's Open action.
 
@@ -169,8 +169,10 @@ Verification performed locally and in [the successful hosted build](https://gith
 | iOS video preparation (macOS AVFoundation) | Compatible MP4 kept byte-identical; H.264/AAC MOV remuxed without re-encoding; disguised MOV, HEVC, ProRes/PCM, rotated and silent sources converted to verified H.264/AAC MP4; corrupt and audio-only input rejected; cancellation leaves no output |
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
+| iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
+| App Group-less share handoff | Not run: requires a signed sideloaded device; storage and compile paths verified |
 | Android OS background/gallery flow | Not run: no Android device/emulator connected |
 
 The Android APK uses development signing. Download the CI artifact from the successful run, or build locally to obtain `build/app/outputs/flutter-apk/app-release.apk`. CI artifacts use the workflow run number as their build number.
