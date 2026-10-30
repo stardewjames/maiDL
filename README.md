@@ -67,6 +67,17 @@ A **Mac with Xcode, Apple SDKs and signing credentials is required**. iOS source
 
 App and extension versions are synchronized automatically: the extension inherits Flutter's generated build settings. `pubspec.yaml` supplies the version; `--build-name` / `--build-number` override it for both targets. CI uses the workflow run number as the build number.
 
+To produce an unsigned IPA locally without distribution credentials:
+
+```sh
+flutter build ios --release --no-codesign
+mkdir -p build/ipa/Payload
+cp -R build/ios/iphoneos/Runner.app build/ipa/Payload/Runner.app
+(cd build/ipa && zip -qry maidl-unsigned.ipa Payload)
+```
+
+The resulting `build/ipa/maidl-unsigned.ipa` contains the app and its embedded extension. It is unsigned, so re-sign it with your Apple team and provisioning profiles (for example with Sideloadly or AltStore) before installing; TestFlight/App Store upload requires a normally signed build.
+
 The app never needs read access to the entire Photos library. There is no public per-asset API for opening the Photos app, so iOS history does not offer Android's Open action.
 
 ## GitHub builds
@@ -74,12 +85,23 @@ The app never needs read access to the entire Photos library. There is no public
 Public repository: [stardewjames/maiDL](https://github.com/stardewjames/maiDL).
 Open [Actions → Build mobile apps](https://github.com/stardewjames/maiDL/actions/workflows/build.yml) to run a manual build or download artifacts from a completed run.
 
-`.github/workflows/build.yml` runs on pushes to `main`, pull requests, and **Run workflow**. Flutter is pinned to `3.47.8`; third-party actions are pinned to commit hashes. No signing secrets are needed.
+`.github/workflows/build.yml` runs on pushes to `main`, pull requests, **Run workflow**, and tags matching `v*`. Flutter is pinned to `3.47.8`; third-party actions are pinned to commit hashes. No signing secrets are needed. For tag builds the tag without the leading `v` becomes the app version, so `v1.0.0` builds `1.0.0`; a semver suffix such as `-rc.1` only marks the GitHub prerelease, keeping the app version numeric for Apple.
 
-- **Android** uses Ubuntu and Java 17, resolves locked dependencies, analyzes/tests Flutter, builds a release APK, and runs the native JVM tests. Artifacts: `maidl-android-<run number>` and `maidl-android-tests-<run number>`.
-- **iOS** uses a macOS runner with Xcode. First, `bash tool/verify_ios_video.sh` generates fixtures and compiles/runs the shipping AVFoundation preparation helper. It verifies unchanged MP4, lossless MOV remux, disguised MOV, HEVC and ProRes/PCM conversion, rotation, silent video, invalid input and cancellation. Then it builds `Runner.app` plus its embedded share extension with `--no-codesign`, checks matching app/extension versions, and uploads `maidl-ios-unsigned-<run number>`.
+- **Android** uses Ubuntu and Java 17, resolves locked dependencies, analyzes/tests Flutter, builds a release APK, and runs the native JVM tests. Artifacts: `maidl-android-<run number>` (`app-release.apk`) and `maidl-android-tests-<run number>`.
+- **iOS** uses a macOS runner with Xcode. First, `bash tool/verify_ios_video.sh` generates fixtures and compiles/runs the shipping AVFoundation preparation helper. It verifies unchanged MP4, lossless MOV remux, disguised MOV, HEVC and ProRes/PCM conversion, rotation, silent video, invalid input and cancellation. Then it builds `Runner.app` plus its embedded share extension with `--no-codesign`, checks matching app/extension versions, and packages `maidl-<version>-ios-unsigned.ipa` in `Payload/` layout with the extension inside. Artifact: `maidl-ios-<run number>`.
 
-Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The unsigned iOS app is a compile-check artifact, not an installable IPA or TestFlight upload.** Producing an installable iOS distribution requires your Apple team, a signing certificate and matching provisioning profiles for both the app and extension, including the App Group capability. Do not commit certificates, profiles or Android keystores.
+Artifacts are retained for 14 days. The Android APK uses a development key, not a stable production signing key. **The iOS IPA is unsigned, so it must be re-signed with your Apple team, a signing certificate and matching provisioning profiles for both the app and extension, including the App Group capability before installing or uploading.** Do not commit certificates, profiles or Android keystores.
+
+### Releases
+
+Pushing a tag such as `v1.0.0` runs the build jobs and then publishes a GitHub Release containing `maidl-<version>-android.apk` and `maidl-<version>-ios-unsigned.ipa`.
+
+```sh
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+The release is marked as a prerelease while the 1.0 line is being validated (`RELEASE_PRERELEASE: 'true'` in the workflow); tags with a semver prerelease suffix are always prereleases. Set `RELEASE_PRERELEASE` to `'false'` to publish a stable release. Re-running a tag build uploads assets to the existing release instead of failing.
 
 The iOS extension embedding phase intentionally precedes the Flutter scripts to avoid an Xcode build dependency cycle.
 
@@ -137,7 +159,7 @@ Verification performed locally and in [the successful hosted build](https://gith
 | iOS video preparation (macOS AVFoundation) | Compatible MP4 kept byte-identical; H.264/AAC MOV remuxed without re-encoding; disguised MOV, HEVC, ProRes/PCM, rotated and silent sources converted to verified H.264/AAC MP4; corrupt and audio-only input rejected; cancellation leaves no output |
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
-| Apple SDK release build | Passed on GitHub macOS; uploaded app contains `ShareExtension.appex`, with matching version `1.0.0` / build `6` |
+| Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | Android OS background/gallery flow | Not run: no Android device/emulator connected |
 

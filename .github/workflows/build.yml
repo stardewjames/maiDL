@@ -3,6 +3,7 @@ name: Build mobile apps
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -15,6 +16,9 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.47.8'
+  # Tag builds publish a GitHub pre-release while the 1.0 release is being validated.
+  # Set to 'false' to publish a stable release.
+  RELEASE_PRERELEASE: 'true'
 
 jobs:
   android:
@@ -39,6 +43,18 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_name=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
+          test -n "$build_name"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            build_name="${GITHUB_REF_NAME#v}"
+            build_name="${build_name%%-*}"
+          fi
+          echo "name=$build_name" >> "$GITHUB_OUTPUT"
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
       - name: Analyze Dart
@@ -46,7 +62,10 @@ jobs:
       - name: Test Flutter
         run: flutter test --reporter expanded
       - name: Build release APK
-        run: flutter build apk --release --build-number "$GITHUB_RUN_NUMBER"
+        run: >-
+          flutter build apk --release
+          --build-name "${{ steps.version.outputs.name }}"
+          --build-number "$GITHUB_RUN_NUMBER"
       - name: Test native Android downloader
         working-directory: android
         run: ./gradlew :app:testDebugUnitTest --console=plain
@@ -69,7 +88,7 @@ jobs:
           retention-days: 14
 
   ios:
-    name: iOS unsigned app and share extension
+    name: iOS IPA and share extension
     runs-on: macos-latest
     timeout-minutes: 45
     steps:
@@ -85,12 +104,27 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           channel: stable
           cache: true
+      - name: Resolve build version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_name=$(sed -n 's/^version: *\([^+ ]*\).*/\1/p' pubspec.yaml)
+          test -n "$build_name"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            build_name="${GITHUB_REF_NAME#v}"
+            build_name="${build_name%%-*}"
+          fi
+          echo "name=$build_name" >> "$GITHUB_OUTPUT"
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
       - name: Smoke test native iOS video compatibility
         run: bash tool/verify_ios_video.sh
       - name: Build unsigned iOS release
-        run: flutter build ios --release --no-codesign --build-number "$GITHUB_RUN_NUMBER"
+        run: >-
+          flutter build ios --release --no-codesign
+          --build-name "${{ steps.version.outputs.name }}"
+          --build-number "$GITHUB_RUN_NUMBER"
       - name: Verify embedded extension and matching versions
         shell: bash
         run: |
@@ -103,14 +137,82 @@ jobs:
             extension_value=$(/usr/libexec/PlistBuddy -c "Print :$key" "$extension/Info.plist")
             test "$app_value" = "$extension_value"
           done
-      - name: Package unsigned app
+      - name: Package IPA
+        shell: bash
         run: |
-          mkdir -p build/ci
-          ditto -c -k --sequesterRsrc --keepParent build/ios/iphoneos/Runner.app build/ci/maidl-ios-unsigned.zip
-      - name: Upload unsigned iOS app
+          set -euo pipefail
+          version="${{ steps.version.outputs.name }}"
+          app=build/ios/iphoneos/Runner.app
+          test -d "$app"
+          rm -rf build/ci
+          mkdir -p build/ci/Payload
+          cp -R "$app" build/ci/Payload/Runner.app
+          test -d build/ci/Payload/Runner.app/PlugIns/ShareExtension.appex
+          (cd build/ci && /usr/bin/zip -qry "maidl-${version}-ios-unsigned.ipa" Payload)
+          ipa="build/ci/maidl-${version}-ios-unsigned.ipa"
+          unzip -Z1 "$ipa" | tr -d '\r' | grep -qx 'Payload/Runner.app/Runner'
+          unzip -Z1 "$ipa" | tr -d '\r' | grep -qx 'Payload/Runner.app/PlugIns/ShareExtension.appex/ShareExtension'
+      - name: Upload iOS IPA
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: maidl-ios-unsigned-${{ github.run_number }}
-          path: build/ci/maidl-ios-unsigned.zip
+          name: maidl-ios-${{ github.run_number }}
+          path: build/ci/*.ipa
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Publish prerelease
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, ios]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download Android APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download "$GITHUB_RUN_ID"
+          --repo "$GITHUB_REPOSITORY"
+          --name "maidl-android-${{ github.run_number }}"
+          --dir build/release/android
+      - name: Download iOS IPA
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh run download "$GITHUB_RUN_ID"
+          --repo "$GITHUB_REPOSITORY"
+          --name "maidl-ios-${{ github.run_number }}"
+          --dir build/release/ios
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          asset_version="${version%%-*}"
+          apk=build/release/android/app-release.apk
+          ipa=$(find build/release/ios -maxdepth 1 -name '*.ipa' -print -quit)
+          test -f "$apk"
+          test -n "$ipa" && test -f "$ipa"
+          cp "$apk" "build/release/maidl-${asset_version}-android.apk"
+          prerelease=()
+          if [[ "$RELEASE_PRERELEASE" == "true" || "$version" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" \
+              "build/release/maidl-${asset_version}-android.apk" "$ipa" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" \
+              "build/release/maidl-${asset_version}-android.apk" "$ipa" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "maiDL ${version}" \
+              --generate-notes \
+              "${prerelease[@]}"
+          fi
