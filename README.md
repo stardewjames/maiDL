@@ -8,7 +8,7 @@ Flutter app for Android and iOS: paste a public video/image link, or share a lin
 - Android share target queues native work without starting the Flutter UI. Downloads run through WorkManager and publish into MediaStore under `Pictures/maiDL` or `Movies/maiDL`; no storage permission is needed.
 - iOS share extension queues a native background `URLSession` transfer. Native completion code checks/prepares videos, then adds media to Photos using add-only authorization. The Flutter UI does not need to be running.
 - Direct HTTP(S) media URLs, redirects, and public HTML pages exposing a direct `og:video`, `og:image`, or video/source URL. Video metadata takes precedence over image metadata.
-- TikTok, Instagram and X/Twitter links through a built-in on-device extractor. It finds a direct media URL and reuses the page cookies/referer for the download.
+- TikTok, Instagram and X/Twitter videos and images through a built-in on-device extractor. It finds a direct media URL and reuses the page cookies/referer for the download. Multi-media posts download their first item.
 
 **YouTube is not supported by the built-in extractor.** YouTube needs a server-side extractor (JavaScript/signature handling and audio/video merging), so those links fail explicitly. For TikTok, Instagram and X, public posts are extracted on-device; private/login-gated posts, age-restricted content, DRM, HLS/DASH playlists and live streams remain unsupported. Extraction depends on the sites' current HTML and can break when they change. Android's gallery must support the original downloaded format. Only download material you have permission to save.
 
@@ -30,10 +30,11 @@ This targets broadly supported iOS media formats, not a guarantee that every fil
 
 ## Social link extraction
 
-TikTok, Instagram and X/Twitter links are resolved inside the app; no server or extra setting is involved. The extractor:
+TikTok, Instagram and X/Twitter links are resolved inside the app; no server or extra setting is involved. The extractor handles videos and photos:
 
 - fetches the public page with a mobile browser user agent;
-- reads TikTok's hydration JSON, Instagram's embedded video URL/OG metadata, or X's video variants;
+- reads TikTok's video or image-post hydration JSON, Instagram's embedded video/image URL/OG metadata, or X's video variants/OG image;
+- downloads the first item when a post contains several images or clips;
 - stores the page cookies and referer with the job so the background download can fetch the media from the same session;
 - shows **Resolving link** while extraction runs, then hands the direct URL to the normal download/prepare/save pipeline.
 
@@ -185,7 +186,7 @@ Verification performed locally and in [the successful hosted build](https://gith
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
 | iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
-| Built-in social extraction | Android JVM tests cover supported hosts, YouTube rejection, TikTok hydration JSON, escaped Instagram video URLs, X video variants and photo fallback |
+| Built-in social extraction | Android JVM tests cover supported hosts, YouTube rejection, TikTok video and image posts, escaped Instagram video URLs, Instagram/X photo fallback, and X video variants |
 | Live TikTok extraction smoke | The live TikTok page produced its download address; the media request succeeded using the page cookies and `Referer` |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |

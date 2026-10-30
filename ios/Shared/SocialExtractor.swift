@@ -130,12 +130,15 @@ enum SocialExtractor {
 
     private static func parseTikTok(_ html: String, url: URL) throws -> SocialMedia {
         for identifier in ["__UNIVERSAL_DATA_FOR_REHYDRATION__", "SIGI_STATE"] {
-            guard let json = scriptJSON(html, id: identifier),
-                  let video = findVideo(json)
-            else { continue }
-            let raw = (video["downloadAddr"] as? String)
-                ?? (video["playAddr"] as? String)
-            if let raw, let media = httpURL(raw) {
+            guard let json = scriptJSON(html, id: identifier) else { continue }
+            if let video = findVideo(json) {
+                let raw = (video["downloadAddr"] as? String)
+                    ?? (video["playAddr"] as? String)
+                if let raw, let media = httpURL(raw) {
+                    return makeMedia(media, platform: .tiktok)
+                }
+            }
+            if let raw = findImagePost(json), let media = httpURL(raw) {
                 return makeMedia(media, platform: .tiktok)
             }
         }
@@ -226,6 +229,36 @@ enum SocialExtractor {
             in: html
         ), let data = body.data(using: .utf8) else { return nil }
         return try? JSONSerialization.jsonObject(with: data)
+    }
+
+    private static func findImagePost(_ value: Any) -> String? {
+        if let dict = value as? [String: Any] {
+            if let post = dict["imagePost"] as? [String: Any],
+               let images = post["images"] as? [[String: Any]] {
+                for image in images {
+                    if let imageURL = image["imageURL"] as? [String: Any] {
+                        if let list = imageURL["urlList"] as? [String],
+                           let first = list.first(where: { !$0.isEmpty }) {
+                            return first
+                        }
+                        if let raw = imageURL["url"] as? String, !raw.isEmpty {
+                            return raw
+                        }
+                    }
+                    if let raw = image["displayImage"] as? String, !raw.isEmpty {
+                        return raw
+                    }
+                }
+            }
+            for child in dict.values {
+                if let found = findImagePost(child) { return found }
+            }
+        } else if let array = value as? [Any] {
+            for child in array {
+                if let found = findImagePost(child) { return found }
+            }
+        }
+        return nil
     }
 
     private static func findVideo(_ value: Any) -> [String: Any]? {

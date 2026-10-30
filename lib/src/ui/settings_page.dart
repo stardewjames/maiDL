@@ -114,9 +114,9 @@ class SettingsPage extends StatelessWidget {
                       _SupportLine(
                         icon: Icons.check_circle_outline_rounded,
                         text:
-                            'Public TikTok, Instagram and X/Twitter posts via '
-                            'built-in extraction. YouTube needs a server '
-                            'extractor and is not supported.',
+                            'Public TikTok, Instagram and X/Twitter videos and '
+                            'images via built-in extraction. YouTube needs a '
+                            'server extractor and is not supported.',
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 10),

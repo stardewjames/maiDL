@@ -47,6 +47,59 @@ class SocialExtractorTest {
     }
 
     @Test
+    fun tiktokImagePostYieldsPhotoUrl() {
+        val html = """
+            <html><script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application/json">
+            {"__DEFAULT_SCOPE__":{"webapp.photo-detail":{"itemInfo":{"itemStruct":
+            {"imagePost":{"images":[{"imageURL":{"urlList":["https://cdn.example/photo.jpg"]}}]}}}}}}
+            </script></html>
+        """.trimIndent()
+        val media = SocialExtractor.parseHtml(
+            html,
+            SocialPlatform.TIKTOK,
+            "https://www.tiktok.com/@a/photo/1",
+        )
+        assertEquals("https://cdn.example/photo.jpg", media)
+    }
+
+    @Test
+    fun xPhotoUsesOpenGraphImage() {
+        val html = """<html><meta property="og:image" content="https://pbs.twimg.com/media/a.jpg?name=large"></html>"""
+        val media = SocialExtractor.parseHtml(
+            html,
+            SocialPlatform.X,
+            "https://x.com/user/status/3",
+        )
+        assertEquals("https://pbs.twimg.com/media/a.jpg?name=large", media)
+    }
+
+    @Test
+    fun instagramPhotoUsesOpenGraphImage() {
+        val html = """<html><meta property="og:image" content="https://cdn.example/photo.jpg"></html>"""
+        val media = SocialExtractor.parseHtml(
+            html,
+            SocialPlatform.INSTAGRAM,
+            "https://www.instagram.com/p/abc/",
+        )
+        assertEquals("https://cdn.example/photo.jpg", media)
+    }
+
+    @Test
+    fun instagramReelRejectsPreviewImage() {
+        val html = """<html><meta property="og:image" content="https://cdn.example/preview.jpg"></html>"""
+        try {
+            SocialExtractor.parseHtml(
+                html,
+                SocialPlatform.INSTAGRAM,
+                "https://www.instagram.com/reel/abc/",
+            )
+            fail("expected a social extraction error")
+        } catch (_: SocialExtractorException) {
+            // expected
+        }
+    }
+
+    @Test
     fun instagramEscapedVideoUrlIsUnescaped() {
         val html = """<html>"video_url":"https:\/\/cdn.example\/video.mp4?a=1\u0026b=2"</html>"""
         val media = SocialExtractor.parseHtml(

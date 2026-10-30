@@ -128,11 +128,14 @@ object SocialExtractor {
             "SIGI_STATE",
         )) {
             val json = scriptJson(html, identifier) ?: continue
-            val video = findVideo(json) ?: continue
-            val raw = video.optString("downloadAddr").ifBlank {
-                video.optString("playAddr")
+            val video = findVideo(json)
+            if (video != null) {
+                val raw = video.optString("downloadAddr").ifBlank {
+                    video.optString("playAddr")
+                }
+                httpUrl(raw)?.let { return it }
             }
-            httpUrl(raw)?.let { return it }
+            findImagePost(json)?.let { raw -> httpUrl(raw)?.let { return it } }
         }
         OgParser.findMediaUrl(html, baseUrl)
             ?.takeIf(::isVideoUrl)
@@ -185,6 +188,38 @@ object SocialExtractor {
             html,
         ) ?: return null
         return runCatching { JSONObject(body) }.getOrNull()
+    }
+
+    private fun findImagePost(value: Any?): String? {
+        when (value) {
+            is JSONObject -> {
+                val images = value.optJSONObject("imagePost")?.optJSONArray("images")
+                if (images != null) {
+                    for (index in 0 until images.length()) {
+                        val image = images.optJSONObject(index) ?: continue
+                        val imageUrl = image.optJSONObject("imageURL")
+                        val list = imageUrl?.optJSONArray("urlList")
+                        if (list != null) {
+                            for (urlIndex in 0 until list.length()) {
+                                val raw = list.optString(urlIndex)
+                                if (raw.isNotBlank()) return raw
+                            }
+                        }
+                        val raw = imageUrl?.optString("url").orEmpty()
+                        if (raw.isNotBlank()) return raw
+                    }
+                }
+                for (key in value.keys()) {
+                    findImagePost(value.opt(key))?.let { return it }
+                }
+            }
+            is JSONArray -> {
+                for (index in 0 until value.length()) {
+                    findImagePost(value.opt(index))?.let { return it }
+                }
+            }
+        }
+        return null
     }
 
     private fun findVideo(value: Any?): JSONObject? {
