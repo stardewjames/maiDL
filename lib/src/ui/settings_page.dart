@@ -440,7 +440,7 @@ class _ResolverCardState extends State<_ResolverCard> {
                 textInputAction: TextInputAction.done,
                 decoration: const InputDecoration(
                   labelText: 'Cobalt API URL',
-                  hintText: 'https://api.cobalt.tools',
+                  hintText: 'https://your-cobalt-instance',
                   border: OutlineInputBorder(),
                 ),
               ),
@@ -456,8 +456,9 @@ class _ResolverCardState extends State<_ResolverCard> {
                       'reach. It resolves with yt-dlp and streams a single-file '
                       'video through that server.',
                 ResolverMode.cobalt =>
-                  'Use a cobalt.tools API instance. The app asks it for a '
-                      'downloadable media URL.',
+                  'Use a cobalt.tools-compatible instance that accepts API '
+                      'requests. The public api.cobalt.tools now requires a JWT; '
+                      'a self-hosted instance usually does not.',
               },
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,
