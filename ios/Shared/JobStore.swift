@@ -9,12 +9,29 @@ final class JobStore {
 
     private let fileManager = FileManager.default
     private let queue = DispatchQueue(label: "app.maidl.jobstore")
+    private let rootOverride: (() throws -> URL)?
+
+    /// The override exists so the macOS storage smoke can exercise both root
+    /// branches deterministically; the app always uses the default root.
+    init(rootOverride: (() throws -> URL)? = nil) {
+        self.rootOverride = rootOverride
+    }
 
     private func root() throws -> URL {
+        if let rootOverride {
+            return try rootOverride()
+        }
+        return try Self.storageDirectory(
+            container: fileManager.containerURL(
+                forSecurityApplicationGroupIdentifier: SharedConfig.appGroup
+            )
+        )
+    }
+
+    static func storageDirectory(container: URL?) throws -> URL {
+        let fileManager = FileManager.default
         let directory: URL
-        if let container = fileManager.containerURL(
-            forSecurityApplicationGroupIdentifier: SharedConfig.appGroup
-        ) {
+        if let container {
             directory = container.appendingPathComponent(
                 "Library/Application Support/maidl", isDirectory: true
             )
