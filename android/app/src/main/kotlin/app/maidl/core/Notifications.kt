@@ -62,6 +62,7 @@ object Notifications {
             -1
         }
         val text = when {
+            job.status == JobStatus.RESOLVING -> "Resolving link…"
             saving -> "Adding to your library…"
             total > 0 -> "$percent% · ${formatBytes(received)} of ${formatBytes(total)}"
             else -> "${formatBytes(received)} downloaded"

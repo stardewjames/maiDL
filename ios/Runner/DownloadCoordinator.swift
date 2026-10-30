@@ -10,6 +10,7 @@ final class DownloadCoordinator {
     private let store = JobStore.shared
     private var handlers: [String: BackgroundSessionHandler] = [:]
     private var pendingPermissionJobs = Set<String>()
+    private var resolvingJobs = Set<String>()
 
     /// Always invoked on the main queue.
     var onJobUpdate: ((JobRecord) -> Void)?
@@ -71,10 +72,100 @@ final class DownloadCoordinator {
             return existing
         }
         let access = try photoAccess()
-        let handler = try appHandler()
         let job = JobFactory.create(url: url, origin: origin)
         try store.save(job)
+        return try begin(job, access: access)
+    }
+
+    /// Starts resolution for supported social links, or the transfer directly.
+    private func begin(_ job: JobRecord, access: String) throws -> JobRecord {
+        let settings = ResolverSettingsStore.load()
+        if settings.isEnabled,
+           let url = URL(string: job.url),
+           LinkResolver.isSupported(url) {
+            return try beginResolution(job, url: url, settings: settings, access: access)
+        }
+        let handler = try appHandler()
         return try startOrRequestAccess(job, using: handler, access: access)
+    }
+
+    private func beginResolution(
+        _ job: JobRecord,
+        url: URL,
+        settings: ResolverSettings,
+        access: String
+    ) throws -> JobRecord {
+        var resolving = job
+        resolving.status = "resolving"
+        resolving.error = nil
+        resolving.updatedAt = JobRecord.nowMillis()
+        try store.save(resolving)
+        emit(resolving)
+        resolve(jobId: job.id, url: url, settings: settings, access: access)
+        return resolving
+    }
+
+    private func resolve(
+        jobId: String,
+        url: URL,
+        settings: ResolverSettings,
+        access: String
+    ) {
+        guard resolvingJobs.insert(jobId).inserted else { return }
+        LinkResolver.resolve(url, settings: settings) { [weak self] result in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.resolvingJobs.remove(jobId)
+                guard let current = self.store.get(id: jobId),
+                      current.status == "resolving"
+                else { return }
+                switch result {
+                case .failure(let error):
+                    self.failResolution(jobId, message: error.localizedDescription)
+                case .success(let resolved):
+                    do {
+                        var updated = current
+                        updated.mediaUrl = resolved.mediaUrl.absoluteString
+                        let kindSource = resolved.fileName ?? resolved.mediaUrl.absoluteString
+                        updated.kind = MediaTypes.kind(forUrl: kindSource).rawValue
+                        let suggested = resolved.fileName?
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                        updated.fileName = (suggested?.isEmpty == false ? suggested : nil)
+                            ?? MediaTypes.fileName(
+                                forUrl: resolved.mediaUrl.absoluteString,
+                                contentType: nil,
+                                contentDisposition: nil,
+                                suggestedFilename: nil,
+                                fallbackMillis: JobRecord.nowMillis()
+                            )
+                        updated.status = "queued"
+                        updated.error = nil
+                        updated.updatedAt = JobRecord.nowMillis()
+                        try self.store.save(updated)
+                        self.emit(updated)
+                        let handler = try self.appHandler()
+                        _ = try self.startOrRequestAccess(
+                            updated,
+                            using: handler,
+                            access: access
+                        )
+                    } catch {
+                        self.failResolution(jobId, message: error.localizedDescription)
+                    }
+                }
+            }
+        }
+    }
+
+    private func failResolution(_ id: String, message: String) {
+        guard let failed = try? store.update(id: id, { current in
+            guard current.status == "resolving" else { return false }
+            current.status = "failed"
+            current.error = message
+            current.updatedAt = JobRecord.nowMillis()
+            return true
+        }) else { return }
+        emit(failed)
     }
 
     @discardableResult
@@ -84,7 +175,6 @@ final class DownloadCoordinator {
         }
         if existing.isActive { return existing }
         let access = try photoAccess()
-        let handler = try appHandler()
         guard let job = try store.update(id: id, { current in
             guard !current.isActive else { return false }
             current.status = "queued"
@@ -101,7 +191,7 @@ final class DownloadCoordinator {
             return true
         }) else { return store.get(id: id) ?? existing }
         store.removeIncomingFiles(for: id, transferToken: existing.transferToken)
-        return try startOrRequestAccess(job, using: handler, access: access)
+        return try begin(job, access: access)
     }
 
     func cancel(id: String) throws {
@@ -261,6 +351,28 @@ final class DownloadCoordinator {
     /// Photos work and permission prompts; recheck before repairing a record.
     func reconcile() {
         _ = try? ensureHandler(identifier: SharedConfig.appSessionIdentifier)
+        let resolverSettings = ResolverSettingsStore.load()
+        for job in store.all()
+            where job.status == "resolving" && !resolvingJobs.contains(job.id) {
+            guard let url = URL(string: job.url) else { continue }
+            guard resolverSettings.isEnabled, LinkResolver.isSupported(url) else {
+                failResolution(
+                    job.id,
+                    message: "Turn on a link resolver in Settings → Social links to finish this download."
+                )
+                continue
+            }
+            do {
+                resolve(
+                    jobId: job.id,
+                    url: url,
+                    settings: resolverSettings,
+                    access: try photoAccess()
+                )
+            } catch {
+                failResolution(job.id, message: error.localizedDescription)
+            }
+        }
         let records = store.all()
         for job in records where !job.isActive {
             cleanupFinishedSource(job: job)

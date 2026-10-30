@@ -28,6 +28,8 @@ String formatRelative(DateTime time, {DateTime? now}) {
 
 String statusLabel(String wireStatus) {
   switch (wireStatus) {
+    case 'resolving':
+      return 'Resolving link';
     case 'queued':
       return 'Queued';
     case 'downloading':

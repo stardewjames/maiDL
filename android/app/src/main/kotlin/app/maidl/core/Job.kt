@@ -4,6 +4,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 enum class JobStatus(val wire: String) {
+    RESOLVING("resolving"),
     QUEUED("queued"),
     DOWNLOADING("downloading"),
     SAVING("saving"),
@@ -12,7 +13,8 @@ enum class JobStatus(val wire: String) {
     CANCELED("canceled");
 
     val isActive: Boolean
-        get() = this == QUEUED || this == DOWNLOADING || this == SAVING
+        get() = this == RESOLVING || this == QUEUED || this == DOWNLOADING ||
+            this == SAVING
 
     val isTerminal: Boolean
         get() = !isActive
@@ -47,6 +49,8 @@ data class Job(
     val error: String? = null,
     val remoteId: String? = null,
     val mimeType: String? = null,
+    // Direct media URL when a social link was resolved.
+    val mediaUrl: String? = null,
     // Internal execution generation; deliberately not part of the channel payload.
     val generation: Long = 0,
 ) {
@@ -66,6 +70,7 @@ data class Job(
         put("error", error ?: JSONObject.NULL)
         put("remoteId", remoteId ?: JSONObject.NULL)
         put("mimeType", mimeType ?: JSONObject.NULL)
+        put("mediaUrl", mediaUrl ?: JSONObject.NULL)
         put("generation", generation)
     }
 
@@ -92,6 +97,7 @@ data class Job(
                 error = json.optString("error").takeIf { it.isNotBlank() },
                 remoteId = json.optString("remoteId").takeIf { it.isNotBlank() },
                 mimeType = json.optString("mimeType").takeIf { it.isNotBlank() },
+                mediaUrl = json.optString("mediaUrl").takeIf { it.isNotBlank() },
                 generation = json.optLong("generation", 0L),
             )
         }

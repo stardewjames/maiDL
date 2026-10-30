@@ -112,6 +112,8 @@ class JobCard extends StatelessWidget {
       case JobStatus.failed:
       case JobStatus.canceled:
         parts.add(formatRelative(job.updatedAt));
+      case JobStatus.resolving:
+        parts.add('from ${job.host}');
       case JobStatus.preparing:
       case JobStatus.saving:
         parts.add(formatBytes(job.bytesReceived));

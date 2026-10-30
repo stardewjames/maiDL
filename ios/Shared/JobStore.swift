@@ -47,6 +47,22 @@ final class JobStore {
         return directory
     }
 
+    func settingsData() -> Data? {
+        queue.sync {
+            guard let directory = try? root() else { return nil }
+            return try? Data(
+                contentsOf: directory.appendingPathComponent("resolver-settings.json")
+            )
+        }
+    }
+
+    func saveSettingsData(_ data: Data) throws {
+        try queue.sync {
+            let url = try root().appendingPathComponent("resolver-settings.json")
+            try data.write(to: url, options: .atomic)
+        }
+    }
+
     private func jobsDirectory() throws -> URL {
         try root().appendingPathComponent("jobs", isDirectory: true)
     }

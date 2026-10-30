@@ -101,6 +101,8 @@ class DownloadRepository private constructor(context: Context) {
             bytesReceived = 0,
             totalBytes = -1,
             remoteId = null,
+            mediaUrl = null,
+            mimeType = null,
             updatedAt = System.currentTimeMillis(),
             generation = existing.generation + 1,
         )

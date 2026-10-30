@@ -205,6 +205,11 @@ void main() {
 
     expect(find.text('Settings'), findsOneWidget);
     expect(find.text('Your Photos library'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Clear history'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('Clear history'), findsOneWidget);
 
     await api.close();

@@ -8,8 +8,9 @@ Flutter app for Android and iOS: paste a public video/image link, or share a lin
 - Android share target queues native work without starting the Flutter UI. Downloads run through WorkManager and publish into MediaStore under `Pictures/maiDL` or `Movies/maiDL`; no storage permission is needed.
 - iOS share extension queues a native background `URLSession` transfer. Native completion code checks/prepares videos, then adds media to Photos using add-only authorization. The Flutter UI does not need to be running.
 - Direct HTTP(S) media URLs, redirects, and public HTML pages exposing a direct `og:video`, `og:image`, or video/source URL. Video metadata takes precedence over image metadata.
+- TikTok, Instagram, YouTube/Shorts and X/Twitter links through a user-configured **yt-dlp service** or **Cobalt API**. The resolver returns a direct media URL before the normal background transfer starts.
 
-**Not a universal social-media downloader.** YouTube/TikTok/Instagram and other post links are not guaranteed to expose downloadable media. Pages may expose only a thumbnail. Authentication, private posts, DRM, HLS/DASH playlists and site-specific extraction are not supported. Android's gallery must support the original downloaded format. Only download material you have permission to save.
+**Social links require a resolver.** Without one, those apps' pages usually expose only a thumbnail or require login. With a resolver, public posts work, but private/login-gated posts, DRM, HLS/DASH playlists and live streams remain unsupported. YouTube through the bundled yt-dlp service prefers a single-file progressive stream (often 360p); Cobalt can offer different formats depending on its instance. Android's gallery must support the original downloaded format. Only download material you have permission to save.
 
 ## iOS video compatibility
 
@@ -25,6 +26,19 @@ Videos are prepared as **MP4 with H.264 video and AAC audio when audio is presen
 
 This targets broadly supported iOS media formats, not a guarantee that every file will import: Photos authorization, available storage, damaged media and OS lifecycle restrictions can still cause failure.
 
+
+
+## Social link resolver
+
+Settings → **Social links** chooses how TikTok, Instagram, YouTube/Shorts and X/Twitter links are turned into media URLs:
+
+- **Off** (default): only direct media and pages exposing media metadata work.
+- **yt-dlp service**: run the small companion service from `tool/resolver/` on a computer the phone can reach, then enter its URL, for example `http://192.168.1.20:8080`. See `tool/resolver/README.md`. The service extracts with yt-dlp and streams the file back through itself, which handles YouTube's signed, IP-bound URLs and referrer restrictions.
+- **Cobalt API**: enter a cobalt.tools-compatible API base URL, for example `https://api.cobalt.tools`. The app sends the social link to Cobalt and downloads the URL it returns.
+
+Only those four platforms' hosts are sent to the resolver; direct media URLs bypass it. Resolution happens before the transfer and appears as **Resolving link** in history. A failure leaves the job in history with the resolver's error and can be retried.
+
+Security notes: the bundled yt-dlp service has no authentication, so run it on a trusted LAN or behind an authenticated reverse proxy; set `MAIDL_YTDLP_COOKIES` only on that machine. iOS allows HTTP resolver and media URLs (`NSAllowsArbitraryLoads`), and Android already allows cleartext traffic, so plain HTTP works for LAN resolvers. Prefer HTTPS when the resolver is reachable from untrusted networks.
 
 ## Background behavior
 
@@ -124,6 +138,8 @@ flowchart LR
     UI[Flutter link entry and history] --> Native[Native queue]
     AndroidShare[Android share relay] --> Native
     IOSShare[iOS share extension] --> Session[Background URLSession]
+    Native --> Resolver[yt-dlp service or Cobalt API]
+    Resolver --> Native
     Native --> Worker[Android WorkManager]
     Native --> Session
     Worker --> Store[MediaStore gallery]
@@ -133,10 +149,10 @@ flowchart LR
     Preparation --> Photos
 ```
 
-- `lib/src/core`: job model, link parsing, channel API and UI state mirror.
+- `lib/src/core`: job model, link parsing, resolver settings, channel API and UI state mirror.
 - `lib/src/ui`: link entry, job cards, permissions and history settings.
-- `android/app/src/main/kotlin/app/maidl`: share intake, queue, worker, HTTP transfer and MediaStore publication.
-- `ios/Shared`: job records (App Group when entitled, app-local otherwise), link/media resolution, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
+- `android/app/src/main/kotlin/app/maidl`: share intake, queue, resolver client, worker, HTTP transfer and MediaStore publication.
+- `ios/Shared`: job records (App Group when entitled, app-local otherwise), link/media resolution, resolver client, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
 - `ios/Runner`: background event routing and Flutter channels.
 - `ios/ShareExtension`: lightweight share-sheet UI and intake.
 
@@ -170,6 +186,7 @@ Verification performed locally and in [the successful hosted build](https://gith
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
 | iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
+| Social resolver parsing | Android JVM tests cover supported hosts, Cobalt tunnel/picker/error responses, yt-dlp responses and invalid endpoints |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | App Group-less share handoff | Not run: requires a signed sideloaded device; storage and compile paths verified |

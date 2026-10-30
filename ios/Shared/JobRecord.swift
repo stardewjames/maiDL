@@ -28,7 +28,8 @@ struct JobRecord: Codable, Equatable {
     var pendingSourceFile: String?
 
     var isActive: Bool {
-        status == "queued" || status == "downloading" || status == "preparing" || status == "saving"
+        status == "resolving" || status == "queued" || status == "downloading"
+            || status == "preparing" || status == "saving"
     }
 
     static func nowMillis() -> Int64 {

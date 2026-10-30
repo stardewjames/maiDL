@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'download_job.dart';
 import 'downloads_api.dart';
 import 'link_input.dart';
+import 'resolver_settings.dart';
 
 /// Mirrors the native queue and history, and serialises user actions.
 ///
@@ -27,6 +28,7 @@ class DownloadController extends ChangeNotifier {
   PermissionState notifications = PermissionState.unsupported;
   bool canOpenSaved = false;
   String platform = '';
+  ResolverSettings resolverSettings = const ResolverSettings();
 
   bool get isLoading => _loading;
 
@@ -54,6 +56,7 @@ class DownloadController extends ChangeNotifier {
       photoAccess = snapshot.photoAccess;
       notifications = snapshot.notifications;
       canOpenSaved = snapshot.canOpenSaved;
+      resolverSettings = snapshot.resolver;
       _merge(snapshot.jobs);
     } on NativeFailure catch (failure) {
       _unavailableReason = failure.message;
@@ -141,6 +144,12 @@ class DownloadController extends ChangeNotifier {
     notifications = granted ? PermissionState.granted : PermissionState.denied;
     _notify();
     return granted;
+  }
+
+  Future<void> updateResolverSettings(ResolverSettings settings) async {
+    await _api.setResolverSettings(settings);
+    resolverSettings = settings;
+    _notify();
   }
 
   void _merge(List<DownloadJob> incoming) {

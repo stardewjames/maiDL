@@ -200,7 +200,50 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        var job = JobFactory.create(url: normalized, origin: "share")
+        let settings = ResolverSettingsStore.load()
+        if settings.isEnabled, LinkResolver.isSupported(normalized) {
+            titleLabel.text = "Resolving link"
+            messageLabel.text = "Finding a downloadable video…"
+            spinner.startAnimating()
+            LinkResolver.resolve(normalized, settings: settings) { [weak self] result in
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    switch result {
+                    case .success(let resolved):
+                        self.queueTransfer(original: normalized, resolved: resolved)
+                    case .failure(let error):
+                        self.showError(error.localizedDescription)
+                    }
+                }
+            }
+            return
+        }
+
+        queueTransfer(original: normalized, resolved: nil)
+    }
+
+    private func queueTransfer(original: URL, resolved: ResolverResult?) {
+        if JobStore.shared.activeDuplicate(url: original.absoluteString) != nil {
+            complete()
+            return
+        }
+
+        var job = JobFactory.create(url: original, origin: "share")
+        if let resolved {
+            job.mediaUrl = resolved.mediaUrl.absoluteString
+            let kindSource = resolved.fileName ?? resolved.mediaUrl.absoluteString
+            job.kind = MediaTypes.kind(forUrl: kindSource).rawValue
+            let suggested = resolved.fileName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            job.fileName = (suggested?.isEmpty == false ? suggested : nil)
+                ?? MediaTypes.fileName(
+                    forUrl: resolved.mediaUrl.absoluteString,
+                    contentType: nil,
+                    contentDisposition: nil,
+                    suggestedFilename: nil,
+                    fallbackMillis: JobRecord.nowMillis()
+                )
+        }
         job.sessionIdentifier = SharedConfig.shareSessionIdentifierPrefix + UUID().uuidString
         do {
             guard let handler = try BackgroundSessionHandler(

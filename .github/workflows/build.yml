@@ -57,6 +57,8 @@ jobs:
           echo "name=$build_name" >> "$GITHUB_OUTPUT"
       - name: Resolve locked dependencies
         run: flutter pub get --enforce-lockfile
+      - name: Check resolver service syntax
+        run: python3 -m py_compile tool/resolver/server.py
       - name: Analyze Dart
         run: flutter analyze
       - name: Test Flutter

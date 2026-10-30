@@ -46,6 +46,7 @@ class DownloadWorker(
         val partFile = File(applicationContext.cacheDir, "downloads/$jobId/$generation.part")
         val engine = DownloadEngine()
         var job = initial
+        var sourceUrl = initial.url
         var lastUpdate = 0L
         var lastPercent = Int.MIN_VALUE
 
@@ -62,19 +63,50 @@ class DownloadWorker(
         try {
             ensureRunning()
             Notifications.ensureChannels(applicationContext)
-            job = updateActive(store, jobId, generation) {
-                it.copy(
-                    status = JobStatus.DOWNLOADING,
-                    error = null,
-                    updatedAt = System.currentTimeMillis(),
-                )
+            val resolverSettings = ResolverSettingsStore.get(applicationContext).load()
+            if (resolverSettings.isEnabled && LinkResolver.isSupported(job.url)) {
+                job = updateActive(store, jobId, generation) {
+                    it.copy(
+                        status = JobStatus.RESOLVING,
+                        error = null,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                }
+                trySetForeground(job, 0, -1)
+                val resolved = LinkResolver.resolve(job.url, resolverSettings)
+                sourceUrl = resolved.mediaUrl
+                job = updateActive(store, jobId, generation) {
+                    it.copy(
+                        mediaUrl = resolved.mediaUrl,
+                        kind = MediaTypes.kindFromUrl(
+                            resolved.fileName ?: resolved.mediaUrl,
+                        ),
+                        fileName = resolved.fileName ?: MediaTypes.fileNameFor(
+                            resolved.mediaUrl,
+                            null,
+                            null,
+                            System.currentTimeMillis(),
+                        ),
+                        status = JobStatus.DOWNLOADING,
+                        error = null,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                }
+            } else {
+                job = updateActive(store, jobId, generation) {
+                    it.copy(
+                        status = JobStatus.DOWNLOADING,
+                        error = null,
+                        updatedAt = System.currentTimeMillis(),
+                    )
+                }
             }
             trySetForeground(job, 0, -1)
 
             val result = coroutineScope {
                 val transfer = async {
                     engine.fetch(
-                        sourceUrl = job.url,
+                        sourceUrl = sourceUrl,
                         partFile = partFile,
                         resumeFrom = partFile.length(),
                         onMetadata = { info ->
