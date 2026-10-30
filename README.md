@@ -186,6 +186,7 @@ Verification performed locally and in [the successful hosted build](https://gith
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
 | iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
 | Built-in social extraction | Android JVM tests cover supported hosts, YouTube rejection, TikTok hydration JSON, escaped Instagram video URLs, X video variants and photo fallback |
+| Live TikTok extraction smoke | The live TikTok page produced its download address; the media request succeeded using the page cookies and `Referer` |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | App Group-less share handoff | Not run: requires a signed sideloaded device; storage and compile paths verified |
