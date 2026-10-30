@@ -33,6 +33,7 @@ struct StorageSmoke {
             let root = fileManager.temporaryDirectory
                 .appendingPathComponent("maidl-storage-\(UUID().uuidString)", isDirectory: true)
             defer { try? fileManager.removeItem(at: root) }
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
             let store = JobStore(rootOverride: { root })
             let id = UUID().uuidString
             let now = JobRecord.nowMillis()
