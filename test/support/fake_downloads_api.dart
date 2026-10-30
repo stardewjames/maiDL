@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:maidl/src/core/download_job.dart';
 import 'package:maidl/src/core/downloads_api.dart';
-import 'package:maidl/src/core/resolver_settings.dart';
 
 /// Records calls and lets tests drive native events.
 class FakeDownloadsApi implements DownloadsApi {
@@ -12,7 +11,6 @@ class FakeDownloadsApi implements DownloadsApi {
     this.photoAccess = PermissionState.unsupported,
     this.notifications = PermissionState.granted,
     this.canOpenSaved = true,
-    this.resolverSettings = const ResolverSettings(),
   }) : historyJobs = List.of(jobs);
 
   final String platform;
@@ -20,7 +18,6 @@ class FakeDownloadsApi implements DownloadsApi {
   PermissionState photoAccess;
   PermissionState notifications;
   bool canOpenSaved;
-  ResolverSettings resolverSettings;
 
   NativeFailure? initializeFailure;
   NativeFailure? enqueueFailure;
@@ -54,7 +51,6 @@ class FakeDownloadsApi implements DownloadsApi {
       photoAccess: photoAccess,
       notifications: notifications,
       canOpenSaved: canOpenSaved,
-      resolver: resolverSettings,
     );
   }
 
@@ -144,14 +140,6 @@ class FakeDownloadsApi implements DownloadsApi {
         ? PermissionState.granted
         : PermissionState.denied;
     return notificationsGrantedOnRequest;
-  }
-
-  @override
-  Future<ResolverSettings> getResolverSettings() async => resolverSettings;
-
-  @override
-  Future<void> setResolverSettings(ResolverSettings settings) async {
-    resolverSettings = settings;
   }
 
   Future<void> close() => _events.close();

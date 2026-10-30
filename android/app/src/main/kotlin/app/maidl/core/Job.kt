@@ -51,6 +51,8 @@ data class Job(
     val mimeType: String? = null,
     // Direct media URL when a social link was resolved.
     val mediaUrl: String? = null,
+    val referer: String? = null,
+    val cookie: String? = null,
     // Internal execution generation; deliberately not part of the channel payload.
     val generation: Long = 0,
 ) {
@@ -71,6 +73,8 @@ data class Job(
         put("remoteId", remoteId ?: JSONObject.NULL)
         put("mimeType", mimeType ?: JSONObject.NULL)
         put("mediaUrl", mediaUrl ?: JSONObject.NULL)
+        put("referer", referer ?: JSONObject.NULL)
+        put("cookie", cookie ?: JSONObject.NULL)
         put("generation", generation)
     }
 
@@ -98,6 +102,8 @@ data class Job(
                 remoteId = json.optString("remoteId").takeIf { it.isNotBlank() },
                 mimeType = json.optString("mimeType").takeIf { it.isNotBlank() },
                 mediaUrl = json.optString("mediaUrl").takeIf { it.isNotBlank() },
+                referer = json.optString("referer").takeIf { it.isNotBlank() },
+                cookie = json.optString("cookie").takeIf { it.isNotBlank() },
                 generation = json.optLong("generation", 0L),
             )
         }

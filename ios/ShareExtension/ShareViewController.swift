@@ -125,6 +125,12 @@ final class ShareViewController: UIViewController {
         DispatchQueue.main.async {
             do {
                 let url = try LinkExtractor.parse(text)
+                if SocialExtractor.isYouTube(url) {
+                    self.showError(
+                        "YouTube links aren't supported by the built-in extractor."
+                    )
+                    return
+                }
                 if SharedConfig.hasAppGroup {
                     self.beginDownload(url)
                 } else {
@@ -200,12 +206,15 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        let settings = ResolverSettingsStore.load()
-        if settings.isEnabled, LinkResolver.isSupported(normalized) {
+        if SocialExtractor.isYouTube(normalized) {
+            showError("YouTube links aren't supported by the built-in extractor.")
+            return
+        }
+        if SocialExtractor.platform(for: normalized) != nil {
             titleLabel.text = "Resolving link"
             messageLabel.text = "Finding a downloadable video…"
             spinner.startAnimating()
-            LinkResolver.resolve(normalized, settings: settings) { [weak self] result in
+            SocialExtractor.extract(normalized) { [weak self] result in
                 DispatchQueue.main.async {
                     guard let self else { return }
                     switch result {
@@ -222,7 +231,7 @@ final class ShareViewController: UIViewController {
         queueTransfer(original: normalized, resolved: nil)
     }
 
-    private func queueTransfer(original: URL, resolved: ResolverResult?) {
+    private func queueTransfer(original: URL, resolved: SocialMedia?) {
         if JobStore.shared.activeDuplicate(url: original.absoluteString) != nil {
             complete()
             return
@@ -231,6 +240,8 @@ final class ShareViewController: UIViewController {
         var job = JobFactory.create(url: original, origin: "share")
         if let resolved {
             job.mediaUrl = resolved.mediaUrl.absoluteString
+            job.referer = resolved.referer
+            job.cookie = resolved.cookie
             let kindSource = resolved.fileName ?? resolved.mediaUrl.absoluteString
             job.kind = MediaTypes.kind(forUrl: kindSource).rawValue
             let suggested = resolved.fileName?

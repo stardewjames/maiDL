@@ -8,9 +8,9 @@ Flutter app for Android and iOS: paste a public video/image link, or share a lin
 - Android share target queues native work without starting the Flutter UI. Downloads run through WorkManager and publish into MediaStore under `Pictures/maiDL` or `Movies/maiDL`; no storage permission is needed.
 - iOS share extension queues a native background `URLSession` transfer. Native completion code checks/prepares videos, then adds media to Photos using add-only authorization. The Flutter UI does not need to be running.
 - Direct HTTP(S) media URLs, redirects, and public HTML pages exposing a direct `og:video`, `og:image`, or video/source URL. Video metadata takes precedence over image metadata.
-- TikTok, Instagram, YouTube/Shorts and X/Twitter links through a user-configured **yt-dlp service**. The resolver returns a direct media URL before the normal background transfer starts.
+- TikTok, Instagram and X/Twitter links through a built-in on-device extractor. It finds a direct media URL and reuses the page cookies/referer for the download.
 
-**Social links require a resolver.** Without one, those apps' pages usually expose only a thumbnail or require login. With the yt-dlp service, public posts work; YouTube's separate video/audio tracks are merged into a fragmented MP4. Private/login-gated posts, DRM, HLS/DASH playlists and live streams remain unsupported. Android's gallery must support the original downloaded format. Only download material you have permission to save.
+**YouTube is not supported by the built-in extractor.** YouTube needs a server-side extractor (JavaScript/signature handling and audio/video merging), so those links fail explicitly. For TikTok, Instagram and X, public posts are extracted on-device; private/login-gated posts, age-restricted content, DRM, HLS/DASH playlists and live streams remain unsupported. Extraction depends on the sites' current HTML and can break when they change. Android's gallery must support the original downloaded format. Only download material you have permission to save.
 
 ## iOS video compatibility
 
@@ -28,16 +28,16 @@ This targets broadly supported iOS media formats, not a guarantee that every fil
 
 
 
-## Social link resolver
+## Social link extraction
 
-Settings → **Social links** chooses how TikTok, Instagram, YouTube/Shorts and X/Twitter links are turned into media URLs:
+TikTok, Instagram and X/Twitter links are resolved inside the app; no server or extra setting is involved. The extractor:
 
-- **Off** (default): only direct media and pages exposing media metadata work.
-- **yt-dlp service**: run the small companion service from `tool/resolver/` on a computer the phone can reach, then enter its URL, for example `http://192.168.1.20:8080`. See `tool/resolver/README.md`. The service extracts with yt-dlp and streams the file back through itself, which handles YouTube's signed, IP-bound URLs and referrer restrictions. It needs `ffmpeg` on the server for YouTube-style separate video/audio streams; those are streamed as fragmented MP4.
+- fetches the public page with a mobile browser user agent;
+- reads TikTok's hydration JSON, Instagram's embedded video URL/OG metadata, or X's video variants;
+- stores the page cookies and referer with the job so the background download can fetch the media from the same session;
+- shows **Resolving link** while extraction runs, then hands the direct URL to the normal download/prepare/save pipeline.
 
-Only those four platforms' hosts are sent to the resolver; direct media URLs bypass it. Resolution happens before the transfer and appears as **Resolving link** in history. A failure leaves the job in history with the resolver's error and can be retried.
-
-Security notes: the bundled yt-dlp service has no authentication, so run it on a trusted LAN or behind an authenticated reverse proxy; set `MAIDL_YTDLP_COOKIES` only on that machine. iOS allows HTTP resolver and media URLs (`NSAllowsArbitraryLoads`), and Android already allows cleartext traffic, so plain HTTP works for LAN resolvers. Prefer HTTPS when the resolver is reachable from untrusted networks.
+YouTube links are rejected with a clear error because they require server-side signature handling and audio/video merging. Only public pages are supported; login walls, age gates, DRM, playlists and live streams fail with the extractor's message and can be retried.
 
 ## Background behavior
 
@@ -137,8 +137,8 @@ flowchart LR
     UI[Flutter link entry and history] --> Native[Native queue]
     AndroidShare[Android share relay] --> Native
     IOSShare[iOS share extension] --> Session[Background URLSession]
-    Native --> Resolver[yt-dlp service]
-    Resolver --> Native
+    Native --> Extractor[Built-in TikTok / Instagram / X extractor]
+    Extractor --> Native
     Native --> Worker[Android WorkManager]
     Native --> Session
     Worker --> Store[MediaStore gallery]
@@ -148,10 +148,10 @@ flowchart LR
     Preparation --> Photos
 ```
 
-- `lib/src/core`: job model, link parsing, resolver settings, channel API and UI state mirror.
+- `lib/src/core`: job model, link parsing, channel API and UI state mirror.
 - `lib/src/ui`: link entry, job cards, permissions and history settings.
-- `android/app/src/main/kotlin/app/maidl`: share intake, queue, resolver client, worker, HTTP transfer and MediaStore publication.
-- `ios/Shared`: job records (App Group when entitled, app-local otherwise), link/media resolution, resolver client, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
+- `android/app/src/main/kotlin/app/maidl`: share intake, queue, built-in extractor, worker, HTTP transfer and MediaStore publication.
+- `ios/Shared`: job records (App Group when entitled, app-local otherwise), link/media resolution, built-in extractor, background sessions, `VideoCompatibility.swift` preparation and Photos import (compiled into app and extension).
 - `ios/Runner`: background event routing and Flutter channels.
 - `ios/ShareExtension`: lightweight share-sheet UI and intake.
 
@@ -185,8 +185,7 @@ Verification performed locally and in [the successful hosted build](https://gith
 | iOS Swift syntax / project wiring | All Swift sources parsed; Xcode target/source/embed configuration validated |
 | Portable Swift media helpers | Compiled and ran URL, metadata, MIME and filename scenarios |
 | iOS storage fallback | Compiled and ran the shipping `JobStore` on macOS; local Application Support root, shared-container root and save/get/remove round-trip passed |
-| Social resolver parsing | Android JVM tests cover supported hosts, yt-dlp responses and invalid endpoints |
-| yt-dlp service smoke | Local direct-URL proxy round-trip matched bytes; YouTube adaptive stream resolved and merged to a playable fragmented MP4 via ffmpeg |
+| Built-in social extraction | Android JVM tests cover supported hosts, YouTube rejection, TikTok hydration JSON, escaped Instagram video URLs, X video variants and photo fallback |
 | Apple SDK release build | Passed on GitHub macOS; the app contains `ShareExtension.appex` with matching version `1.0.0` / build `6`. IPA packaging and prerelease publishing run on the next tag build |
 | Signed-device iOS Photos flow | Not run: requires provisioning and a device |
 | App Group-less share handoff | Not run: requires a signed sideloaded device; storage and compile paths verified |

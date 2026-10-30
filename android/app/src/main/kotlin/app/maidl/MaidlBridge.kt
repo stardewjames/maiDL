@@ -17,8 +17,6 @@ import app.maidl.core.JobOrigin
 import app.maidl.core.LinkText
 import app.maidl.core.MediaTypes
 import app.maidl.core.Notifications
-import app.maidl.core.ResolverSettings
-import app.maidl.core.ResolverSettingsStore
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
@@ -74,7 +72,6 @@ class MaidlBridge(
                         "photos" to "unsupported",
                         "notifications" to notificationState(),
                         "canOpenSaved" to true,
-                        "resolver" to ResolverSettingsStore.get(activity).load().toPayload(),
                     ),
                 )
             }
@@ -128,17 +125,6 @@ class MaidlBridge(
             "requestPhotoAccess" -> result.success("unsupported")
 
             "requestNotifications" -> requestNotifications(result)
-
-            "getResolverSettings" ->
-                result.success(ResolverSettingsStore.get(activity).load().toPayload())
-
-            "setResolverSettings" -> {
-                val settings = ResolverSettings.fromPayload(
-                    call.arguments as? Map<*, *>,
-                )
-                ResolverSettingsStore.get(activity).save(settings)
-                result.success(null)
-            }
 
             else -> result.notImplemented()
         }

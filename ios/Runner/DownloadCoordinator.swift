@@ -38,6 +38,15 @@ final class DownloadCoordinator {
             _ = try enqueue(rawLink: link, origin: "share")
         } catch {
             NSLog("maiDL could not import the shared link: %@", error.localizedDescription)
+            if let url = try? LinkExtractor.normalize(LinkExtractor.parse(link)) {
+                var failed = JobFactory.create(url: url, origin: "share")
+                failed.status = "failed"
+                failed.error = error.localizedDescription
+                failed.updatedAt = JobRecord.nowMillis()
+                if (try? store.save(failed)) != nil {
+                    emit(failed)
+                }
+            }
         }
     }
 
@@ -71,19 +80,32 @@ final class DownloadCoordinator {
         if let existing = store.activeDuplicate(url: url.absoluteString) {
             return existing
         }
+        if SocialExtractor.isYouTube(url) {
+            throw LinkError(
+                code: "unsupported",
+                message: "YouTube links aren't supported by the built-in extractor."
+            )
+        }
         let access = try photoAccess()
         let job = JobFactory.create(url: url, origin: origin)
         try store.save(job)
         return try begin(job, access: access)
     }
 
-    /// Starts resolution for supported social links, or the transfer directly.
+    /// Starts built-in extraction for supported social links, or the transfer
+    /// directly. YouTube needs a server-side extractor and is rejected here.
     private func begin(_ job: JobRecord, access: String) throws -> JobRecord {
-        let settings = ResolverSettingsStore.load()
-        if settings.isEnabled,
-           let url = URL(string: job.url),
-           LinkResolver.isSupported(url) {
-            return try beginResolution(job, url: url, settings: settings, access: access)
+        guard let url = URL(string: job.url) else {
+            throw LinkError(code: "invalid_link", message: "That link could not be read.")
+        }
+        if SocialExtractor.isYouTube(url) {
+            throw LinkError(
+                code: "unsupported",
+                message: "YouTube links aren't supported by the built-in extractor."
+            )
+        }
+        if SocialExtractor.platform(for: url) != nil {
+            return try beginResolution(job, url: url, access: access)
         }
         let handler = try appHandler()
         return try startOrRequestAccess(job, using: handler, access: access)
@@ -92,7 +114,6 @@ final class DownloadCoordinator {
     private func beginResolution(
         _ job: JobRecord,
         url: URL,
-        settings: ResolverSettings,
         access: String
     ) throws -> JobRecord {
         var resolving = job
@@ -101,18 +122,17 @@ final class DownloadCoordinator {
         resolving.updatedAt = JobRecord.nowMillis()
         try store.save(resolving)
         emit(resolving)
-        resolve(jobId: job.id, url: url, settings: settings, access: access)
+        resolve(jobId: job.id, url: url, access: access)
         return resolving
     }
 
     private func resolve(
         jobId: String,
         url: URL,
-        settings: ResolverSettings,
         access: String
     ) {
         guard resolvingJobs.insert(jobId).inserted else { return }
-        LinkResolver.resolve(url, settings: settings) { [weak self] result in
+        SocialExtractor.extract(url) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
                 self.resolvingJobs.remove(jobId)
@@ -126,6 +146,8 @@ final class DownloadCoordinator {
                     do {
                         var updated = current
                         updated.mediaUrl = resolved.mediaUrl.absoluteString
+                        updated.referer = resolved.referer
+                        updated.cookie = resolved.cookie
                         let kindSource = resolved.fileName ?? resolved.mediaUrl.absoluteString
                         updated.kind = MediaTypes.kind(forUrl: kindSource).rawValue
                         let suggested = resolved.fileName?
@@ -174,6 +196,12 @@ final class DownloadCoordinator {
             throw LinkError(code: "not_found", message: "That download is no longer in the list.")
         }
         if existing.isActive { return existing }
+        if let url = URL(string: existing.url), SocialExtractor.isYouTube(url) {
+            throw LinkError(
+                code: "unsupported",
+                message: "YouTube links aren't supported by the built-in extractor."
+            )
+        }
         let access = try photoAccess()
         guard let job = try store.update(id: id, { current in
             guard !current.isActive else { return false }
@@ -181,6 +209,8 @@ final class DownloadCoordinator {
             current.error = nil
             current.remoteId = nil
             current.mediaUrl = nil
+            current.referer = nil
+            current.cookie = nil
             current.hops = 0
             current.pendingSourceFile = nil
             current.bytesReceived = 0
@@ -351,14 +381,20 @@ final class DownloadCoordinator {
     /// Photos work and permission prompts; recheck before repairing a record.
     func reconcile() {
         _ = try? ensureHandler(identifier: SharedConfig.appSessionIdentifier)
-        let resolverSettings = ResolverSettingsStore.load()
         for job in store.all()
             where job.status == "resolving" && !resolvingJobs.contains(job.id) {
             guard let url = URL(string: job.url) else { continue }
-            guard resolverSettings.isEnabled, LinkResolver.isSupported(url) else {
+            if SocialExtractor.isYouTube(url) {
                 failResolution(
                     job.id,
-                    message: "Turn on a link resolver in Settings → Social links to finish this download."
+                    message: "YouTube links aren't supported by the built-in extractor."
+                )
+                continue
+            }
+            guard SocialExtractor.platform(for: url) != nil else {
+                failResolution(
+                    job.id,
+                    message: "This link is no longer supported by the built-in extractor."
                 )
                 continue
             }
@@ -366,7 +402,6 @@ final class DownloadCoordinator {
                 resolve(
                     jobId: job.id,
                     url: url,
-                    settings: resolverSettings,
                     access: try photoAccess()
                 )
             } catch {

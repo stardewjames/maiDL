@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../core/download_controller.dart';
 import '../core/downloads_api.dart';
-import '../core/resolver_settings.dart';
 
 const String appVersion = '1.0.0';
 
@@ -74,9 +73,6 @@ class SettingsPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-              _SectionLabel('Social links'),
-              _ResolverCard(controller: controller),
-              const SizedBox(height: 22),
               _SectionLabel('Where files go'),
               Card(
                 child: ListTile(
@@ -118,8 +114,9 @@ class SettingsPage extends StatelessWidget {
                       _SupportLine(
                         icon: Icons.check_circle_outline_rounded,
                         text:
-                            'TikTok, Instagram, YouTube/Shorts and X/Twitter '
-                            'links when a resolver is configured above.',
+                            'Public TikTok, Instagram and X/Twitter posts via '
+                            'built-in extraction. YouTube needs a server '
+                            'extractor and is not supported.',
                         color: theme.colorScheme.primary,
                       ),
                       const SizedBox(height: 10),
@@ -302,157 +299,6 @@ class _SupportLine extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-
-class _ResolverCard extends StatefulWidget {
-  const _ResolverCard({required this.controller});
-
-  final DownloadController controller;
-
-  @override
-  State<_ResolverCard> createState() => _ResolverCardState();
-}
-
-class _ResolverCardState extends State<_ResolverCard> {
-  late ResolverMode _mode;
-  late final TextEditingController _ytdlp;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final settings = widget.controller.resolverSettings;
-    _mode = settings.mode;
-    _ytdlp = TextEditingController(text: settings.ytdlpUrl);
-  }
-
-  @override
-  void dispose() {
-    _ytdlp.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    final url = _mode == ResolverMode.ytdlp ? _ytdlp.text.trim() : '';
-    if (_mode != ResolverMode.off) {
-      final uri = Uri.tryParse(url);
-      if (uri == null ||
-          (uri.scheme != 'http' && uri.scheme != 'https') ||
-          uri.host.isEmpty) {
-        _snack('Enter a full http:// or https:// resolver URL.');
-        return;
-      }
-    }
-    setState(() => _saving = true);
-    try {
-      await widget.controller.updateResolverSettings(
-        ResolverSettings(
-          mode: _mode,
-          ytdlpUrl: _ytdlp.text.trim(),
-        ),
-      );
-      if (!mounted) return;
-      _snack('Resolver settings saved.');
-    } on NativeFailure catch (failure) {
-      if (!mounted) return;
-      _snack(failure.message);
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
-  }
-
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            DropdownButtonFormField<ResolverMode>(
-              initialValue: _mode,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Extractor',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(
-                  value: ResolverMode.off,
-                  child: Text('Off'),
-                ),
-                DropdownMenuItem(
-                  value: ResolverMode.ytdlp,
-                  child: Text('yt-dlp service'),
-                ),
-              ],
-              onChanged: _saving
-                  ? null
-                  : (value) {
-                      if (value == null) return;
-                      setState(() => _mode = value);
-                    },
-            ),
-            if (_mode == ResolverMode.ytdlp) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _ytdlp,
-                enabled: !_saving,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: 'yt-dlp service URL',
-                  hintText: 'http://192.168.1.20:8080',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
-            const SizedBox(height: 10),
-            Text(
-              switch (_mode) {
-                ResolverMode.off =>
-                  'Social links are not resolved. Only direct media and '
-                      'pages with media metadata work.',
-                ResolverMode.ytdlp =>
-                  'Run tool/resolver/server.py on a computer this phone can '
-                      'reach. It resolves with yt-dlp and streams a single-file '
-                      'video through that server.',
-              },
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Only TikTok, Instagram, YouTube/Shorts and X/Twitter links are '
-              'sent to the resolver. Resolver URLs must be reachable from your '
-              'phone.',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Align(
-              alignment: Alignment.centerRight,
-              child: FilledButton(
-                onPressed: _saving ? null : _save,
-                child: Text(_saving ? 'Saving…' : 'Save'),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

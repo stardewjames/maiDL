@@ -14,8 +14,6 @@
 ///     openSaved({id})                     -> bool
 ///     requestPhotoAccess()                -> permission wire string
 ///     requestNotifications()              -> bool
-///     getResolverSettings()               -> resolver settings map
-///     setResolverSettings({...})          -> null
 ///
 ///   EventChannel `app.maidl/download_events` -> job map on every change.
 ///
@@ -28,7 +26,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import 'download_job.dart';
-import 'resolver_settings.dart';
 
 enum PermissionState {
   granted('granted'),
@@ -57,7 +54,6 @@ class NativeSnapshot {
     this.photoAccess = PermissionState.unsupported,
     this.notifications = PermissionState.unsupported,
     this.canOpenSaved = false,
-    this.resolver = const ResolverSettings(),
   });
 
   final List<DownloadJob> jobs;
@@ -65,7 +61,6 @@ class NativeSnapshot {
   final PermissionState photoAccess;
   final PermissionState notifications;
   final bool canOpenSaved;
-  final ResolverSettings resolver;
 }
 
 /// A failure the UI can show verbatim. Never leaks stack traces to the user.
@@ -103,10 +98,6 @@ abstract class DownloadsApi {
   Future<PermissionState> requestPhotoAccess();
 
   Future<bool> requestNotifications();
-
-  Future<ResolverSettings> getResolverSettings();
-
-  Future<void> setResolverSettings(ResolverSettings settings);
 }
 
 class MethodChannelDownloadsApi implements DownloadsApi {
@@ -145,7 +136,6 @@ class MethodChannelDownloadsApi implements DownloadsApi {
       photoAccess: PermissionState.fromWire(raw['photos']),
       notifications: PermissionState.fromWire(raw['notifications']),
       canOpenSaved: raw['canOpenSaved'] == true,
-      resolver: ResolverSettings.fromWire(raw['resolver']),
     );
   }
 
@@ -183,16 +173,6 @@ class MethodChannelDownloadsApi implements DownloadsApi {
 
   @override
   Future<bool> requestNotifications() => _call<bool>('requestNotifications');
-
-  @override
-  Future<ResolverSettings> getResolverSettings() async {
-    final raw = await _raw('getResolverSettings');
-    return ResolverSettings.fromWire(raw);
-  }
-
-  @override
-  Future<void> setResolverSettings(ResolverSettings settings) =>
-      _callVoid('setResolverSettings', settings.toWire());
 
   Future<DownloadJob> _callJob(String method, [Object? args]) async {
     final raw = await _callMap(method, args);

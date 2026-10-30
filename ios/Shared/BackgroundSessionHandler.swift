@@ -56,6 +56,12 @@ final class BackgroundSessionHandler: NSObject, URLSessionDownloadDelegate {
         var request = URLRequest(url: url)
         request.setValue(SharedConfig.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("*/*", forHTTPHeaderField: "Accept")
+        if let referer = job.referer {
+            request.setValue(referer, forHTTPHeaderField: "Referer")
+        }
+        if let cookie = job.cookie {
+            request.setValue(cookie, forHTTPHeaderField: "Cookie")
+        }
         request.timeoutInterval = 60
 
         let task = session.downloadTask(with: request)

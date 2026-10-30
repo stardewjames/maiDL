@@ -71,7 +71,6 @@ final class MaidlPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                 "photos": PhotoLibrarySaver.accessStatus(),
                 "notifications": "unsupported",
                 "canOpenSaved": false,
-                "resolver": ResolverSettingsStore.load().payload,
             ]
             result(snapshot)
 
@@ -134,23 +133,6 @@ final class MaidlPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
         case "requestNotifications":
             result(false)
-
-        case "getResolverSettings":
-            result(ResolverSettingsStore.load().payload)
-
-        case "setResolverSettings":
-            do {
-                try ResolverSettingsStore.save(ResolverSettings(payload: arguments))
-                result(nil)
-            } catch {
-                result(
-                    FlutterError(
-                        code: "settings_failed",
-                        message: "The resolver settings could not be saved.",
-                        details: nil
-                    )
-                )
-            }
 
         default:
             result(FlutterMethodNotImplemented)

@@ -102,6 +102,8 @@ class DownloadRepository private constructor(context: Context) {
             totalBytes = -1,
             remoteId = null,
             mediaUrl = null,
+            referer = null,
+            cookie = null,
             mimeType = null,
             updatedAt = System.currentTimeMillis(),
             generation = existing.generation + 1,

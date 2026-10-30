@@ -117,6 +117,8 @@ class DownloadEngine(private val client: OkHttpClient = defaultClient()) {
         onMetadata: (MediaInfo) -> Unit,
         onProgress: (received: Long, total: Long) -> Unit,
         isCanceled: () -> Boolean,
+        referer: String? = null,
+        cookie: String? = null,
     ): FetchResult {
         var target = sourceUrl
         var resume = readResume(sourceUrl, partFile, resumeFrom)
@@ -127,7 +129,8 @@ class DownloadEngine(private val client: OkHttpClient = defaultClient()) {
             val from = if (resume?.targetUrl == target) resumeFrom else 0L
             when (
                 val attempt = attempt(
-                    sourceUrl, target, from, resume, partFile, onMetadata, onProgress, isCanceled,
+                    sourceUrl, target, from, resume, partFile,
+                    referer, cookie, onMetadata, onProgress, isCanceled,
                 )
             ) {
                 is Attempt.Done -> return attempt.result
@@ -163,6 +166,8 @@ class DownloadEngine(private val client: OkHttpClient = defaultClient()) {
         from: Long,
         resume: ResumeState?,
         partFile: File,
+        referer: String?,
+        cookie: String?,
         onMetadata: (MediaInfo) -> Unit,
         onProgress: (Long, Long) -> Unit,
         isCanceled: () -> Boolean,
@@ -172,6 +177,10 @@ class DownloadEngine(private val client: OkHttpClient = defaultClient()) {
             .header("User-Agent", USER_AGENT)
             .header("Accept", "*/*")
             .header("Accept-Encoding", "identity")
+            .apply {
+                if (referer != null) header("Referer", referer)
+                if (cookie != null) header("Cookie", cookie)
+            }
             .apply {
                 if (from > 0 && resume != null) {
                     header("Range", "bytes=$from-")

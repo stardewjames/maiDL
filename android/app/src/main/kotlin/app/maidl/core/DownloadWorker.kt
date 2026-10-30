@@ -63,8 +63,12 @@ class DownloadWorker(
         try {
             ensureRunning()
             Notifications.ensureChannels(applicationContext)
-            val resolverSettings = ResolverSettingsStore.get(applicationContext).load()
-            if (resolverSettings.isEnabled && LinkResolver.isSupported(job.url)) {
+            if (SocialExtractor.isYouTube(job.url)) {
+                throw SocialExtractorException(
+                    "YouTube links aren't supported by the built-in extractor.",
+                )
+            }
+            if (SocialExtractor.isSupported(job.url)) {
                 job = updateActive(store, jobId, generation) {
                     it.copy(
                         status = JobStatus.RESOLVING,
@@ -73,20 +77,15 @@ class DownloadWorker(
                     )
                 }
                 trySetForeground(job, 0, -1)
-                val resolved = LinkResolver.resolve(job.url, resolverSettings)
+                val resolved = SocialExtractor.extract(job.url)
                 sourceUrl = resolved.mediaUrl
                 job = updateActive(store, jobId, generation) {
                     it.copy(
                         mediaUrl = resolved.mediaUrl,
-                        kind = MediaTypes.kindFromUrl(
-                            resolved.fileName ?: resolved.mediaUrl,
-                        ),
-                        fileName = resolved.fileName ?: MediaTypes.fileNameFor(
-                            resolved.mediaUrl,
-                            null,
-                            null,
-                            System.currentTimeMillis(),
-                        ),
+                        kind = MediaTypes.kindFromUrl(resolved.fileName),
+                        fileName = resolved.fileName,
+                        referer = resolved.referer,
+                        cookie = resolved.cookie,
                         status = JobStatus.DOWNLOADING,
                         error = null,
                         updatedAt = System.currentTimeMillis(),
@@ -107,6 +106,8 @@ class DownloadWorker(
                 val transfer = async {
                     engine.fetch(
                         sourceUrl = sourceUrl,
+                        referer = job.referer,
+                        cookie = job.cookie,
                         partFile = partFile,
                         resumeFrom = partFile.length(),
                         onMetadata = { info ->

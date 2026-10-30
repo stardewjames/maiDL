@@ -20,6 +20,8 @@ struct JobRecord: Codable, Equatable {
     /// Populated after a page link is resolved to its media URL. `url` keeps
     /// the link the user shared so history stays recognisable.
     var mediaUrl: String?
+    var referer: String?
+    var cookie: String?
     var hops: Int
     var sessionIdentifier: String
     var transferToken: String
@@ -51,6 +53,8 @@ struct JobRecord: Codable, Equatable {
         remoteId: String? = nil,
         mimeType: String? = nil,
         mediaUrl: String? = nil,
+        referer: String? = nil,
+        cookie: String? = nil,
         hops: Int = 0,
         sessionIdentifier: String = SharedConfig.appSessionIdentifier,
         transferToken: String = UUID().uuidString,
@@ -70,6 +74,8 @@ struct JobRecord: Codable, Equatable {
         self.remoteId = remoteId
         self.mimeType = mimeType
         self.mediaUrl = mediaUrl
+        self.referer = referer
+        self.cookie = cookie
         self.hops = hops
         self.sessionIdentifier = sessionIdentifier
         self.transferToken = transferToken
@@ -78,7 +84,8 @@ struct JobRecord: Codable, Equatable {
 
     enum CodingKeys: String, CodingKey {
         case id, url, kind, fileName, status, origin, createdAt, updatedAt
-        case bytesReceived, totalBytes, error, remoteId, mimeType, mediaUrl, hops
+        case bytesReceived, totalBytes, error, remoteId, mimeType, mediaUrl
+        case referer, cookie, hops
         case sessionIdentifier, transferToken, pendingSourceFile
     }
 
@@ -99,6 +106,8 @@ struct JobRecord: Codable, Equatable {
         remoteId = try container.decodeIfPresent(String.self, forKey: .remoteId)
         mimeType = try container.decodeIfPresent(String.self, forKey: .mimeType)
         mediaUrl = try container.decodeIfPresent(String.self, forKey: .mediaUrl)
+        referer = try container.decodeIfPresent(String.self, forKey: .referer)
+        cookie = try container.decodeIfPresent(String.self, forKey: .cookie)
         hops = try container.decodeIfPresent(Int.self, forKey: .hops) ?? 0
         sessionIdentifier = try container.decode(String.self, forKey: .sessionIdentifier)
         transferToken = try container.decode(String.self, forKey: .transferToken)
