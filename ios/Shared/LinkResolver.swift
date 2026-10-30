@@ -3,32 +3,27 @@ import Foundation
 enum ResolverMode: String, Codable {
     case off
     case ytdlp
-    case cobalt
 }
 
 struct ResolverSettings: Codable, Equatable {
     var mode: ResolverMode
     var ytdlpUrl: String
-    var cobaltUrl: String
 
     static let disabled = ResolverSettings()
 
-    init(mode: ResolverMode = .off, ytdlpUrl: String = "", cobaltUrl: String = "") {
+    init(mode: ResolverMode = .off, ytdlpUrl: String = "") {
         self.mode = mode
         self.ytdlpUrl = ytdlpUrl
-        self.cobaltUrl = cobaltUrl
     }
 
     init(payload: [String: Any]) {
         mode = ResolverMode(rawValue: payload["mode"] as? String ?? "off") ?? .off
         ytdlpUrl = (payload["ytdlpUrl"] as? String ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        cobaltUrl = (payload["cobaltUrl"] as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     var payload: [String: Any] {
-        ["mode": mode.rawValue, "ytdlpUrl": ytdlpUrl, "cobaltUrl": cobaltUrl]
+        ["mode": mode.rawValue, "ytdlpUrl": ytdlpUrl]
     }
 
     var endpoint: URL? {
@@ -36,7 +31,6 @@ struct ResolverSettings: Codable, Equatable {
         switch mode {
         case .off: return nil
         case .ytdlp: raw = ytdlpUrl
-        case .cobalt: raw = cobaltUrl
         }
         let value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !value.isEmpty,
@@ -51,7 +45,7 @@ struct ResolverSettings: Codable, Equatable {
     var isEnabled: Bool { mode != .off && endpoint != nil }
 
     enum CodingKeys: String, CodingKey {
-        case mode, ytdlpUrl, cobaltUrl
+        case mode, ytdlpUrl
     }
 
     init(from decoder: Decoder) throws {
@@ -59,7 +53,6 @@ struct ResolverSettings: Codable, Equatable {
         let rawMode = try container.decodeIfPresent(String.self, forKey: .mode) ?? "off"
         mode = ResolverMode(rawValue: rawMode) ?? .off
         ytdlpUrl = try container.decodeIfPresent(String.self, forKey: .ytdlpUrl) ?? ""
-        cobaltUrl = try container.decodeIfPresent(String.self, forKey: .cobaltUrl) ?? ""
     }
 }
 
@@ -88,7 +81,7 @@ enum ResolverError: LocalizedError {
     }
 }
 
-/// Resolves social links through a user-configured yt-dlp service or Cobalt API.
+/// Resolves social links through a user-configured yt-dlp service.
 enum LinkResolver {
     /// Only these hosts are sent to the resolver. Matching is suffix-based so
     /// www/mobile/subdomains are covered.
@@ -118,10 +111,12 @@ enum LinkResolver {
             completion(.failure(ResolverError.notConfigured))
             return
         }
-        var endpoint = base
-        if settings.mode == .ytdlp {
-            endpoint.appendPathComponent("resolve")
+        guard settings.mode == .ytdlp else {
+            completion(.failure(ResolverError.notConfigured))
+            return
         }
+        var endpoint = base
+        endpoint.appendPathComponent("resolve")
         guard let scheme = endpoint.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
               endpoint.host != nil
@@ -179,62 +174,20 @@ enum LinkResolver {
         _ json: [String: Any],
         mode: ResolverMode
     ) throws -> ResolverResult {
-        if mode == .ytdlp {
-            guard let raw = json["url"] as? String,
-                  let media = mediaURL(raw)
-            else {
-                throw ResolverError.badResponse(
-                    "The yt-dlp service did not return a media URL."
-                )
-            }
-            return ResolverResult(
-                mediaUrl: media,
-                fileName: (json["fileName"] as? String) ?? (json["filename"] as? String)
+        guard mode == .ytdlp else {
+            throw ResolverError.notConfigured
+        }
+        guard let raw = json["url"] as? String,
+              let media = mediaURL(raw)
+        else {
+            throw ResolverError.badResponse(
+                "The yt-dlp service did not return a media URL."
             )
         }
-
-        switch json["status"] as? String {
-        case "tunnel", "redirect", "stream":
-            guard let raw = json["url"] as? String,
-                  let media = mediaURL(raw)
-            else {
-                throw ResolverError.badResponse("The resolver did not return a media URL.")
-            }
-            return ResolverResult(
-                mediaUrl: media,
-                fileName: json["filename"] as? String
-            )
-        case "picker":
-            let items = json["picker"] as? [[String: Any]] ?? []
-            let ordered = items.filter { ($0["type"] as? String) == "video" }
-                + items.filter { ($0["type"] as? String) != "video" }
-            for item in ordered {
-                if let raw = item["url"] as? String, let media = mediaURL(raw) {
-                    return ResolverResult(
-                        mediaUrl: media,
-                        fileName: json["filename"] as? String
-                    )
-                }
-            }
-            throw ResolverError.badResponse("The resolver found no downloadable media.")
-        case "error":
-            if let error = json["error"] as? [String: Any],
-               let code = error["code"] as? String {
-                throw ResolverError.badResponse("The resolver rejected this link (\(code)).")
-            }
-            if let error = json["error"] as? String, !error.isEmpty {
-                throw ResolverError.badResponse(error)
-            }
-            throw ResolverError.badResponse("The resolver could not download this link.")
-        default:
-            if let raw = json["url"] as? String, let media = mediaURL(raw) {
-                return ResolverResult(
-                    mediaUrl: media,
-                    fileName: json["filename"] as? String
-                )
-            }
-            throw ResolverError.badResponse("The resolver returned an unexpected response.")
-        }
+        return ResolverResult(
+            mediaUrl: media,
+            fileName: (json["fileName"] as? String) ?? (json["filename"] as? String)
+        )
     }
 
     private static func mediaURL(_ raw: String) -> URL? {

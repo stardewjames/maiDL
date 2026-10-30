@@ -41,6 +41,6 @@ MAIDL_YTDLP_COOKIES=/path/to/cookies.txt python3 tool/resolver/server.py
   Fragmented output has no resumable byte ranges; an interrupted download
   restarts.
 - YouTube chooses H.264 MP4 video plus AAC audio when available. Other codecs
-  may not be accepted by Photos; use Cobalt if its instance covers your source.
+  may not be accepted by Photos.
 - Tokens expire after 30 minutes. Private/login-gated sources need cookies;
   DRM and live streams are not supported.

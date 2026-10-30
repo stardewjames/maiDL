@@ -319,7 +319,6 @@ class _ResolverCard extends StatefulWidget {
 class _ResolverCardState extends State<_ResolverCard> {
   late ResolverMode _mode;
   late final TextEditingController _ytdlp;
-  late final TextEditingController _cobalt;
   bool _saving = false;
 
   @override
@@ -328,22 +327,16 @@ class _ResolverCardState extends State<_ResolverCard> {
     final settings = widget.controller.resolverSettings;
     _mode = settings.mode;
     _ytdlp = TextEditingController(text: settings.ytdlpUrl);
-    _cobalt = TextEditingController(text: settings.cobaltUrl);
   }
 
   @override
   void dispose() {
     _ytdlp.dispose();
-    _cobalt.dispose();
     super.dispose();
   }
 
   Future<void> _save() async {
-    final url = switch (_mode) {
-      ResolverMode.ytdlp => _ytdlp.text.trim(),
-      ResolverMode.cobalt => _cobalt.text.trim(),
-      ResolverMode.off => '',
-    };
+    final url = _mode == ResolverMode.ytdlp ? _ytdlp.text.trim() : '';
     if (_mode != ResolverMode.off) {
       final uri = Uri.tryParse(url);
       if (uri == null ||
@@ -359,7 +352,6 @@ class _ResolverCardState extends State<_ResolverCard> {
         ResolverSettings(
           mode: _mode,
           ytdlpUrl: _ytdlp.text.trim(),
-          cobaltUrl: _cobalt.text.trim(),
         ),
       );
       if (!mounted) return;
@@ -403,10 +395,6 @@ class _ResolverCardState extends State<_ResolverCard> {
                   value: ResolverMode.ytdlp,
                   child: Text('yt-dlp service'),
                 ),
-                DropdownMenuItem(
-                  value: ResolverMode.cobalt,
-                  child: Text('Cobalt API'),
-                ),
               ],
               onChanged: _saving
                   ? null
@@ -430,21 +418,6 @@ class _ResolverCardState extends State<_ResolverCard> {
                 ),
               ),
             ],
-            if (_mode == ResolverMode.cobalt) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _cobalt,
-                enabled: !_saving,
-                keyboardType: TextInputType.url,
-                autocorrect: false,
-                textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: 'Cobalt API URL',
-                  hintText: 'https://your-cobalt-instance',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
             const SizedBox(height: 10),
             Text(
               switch (_mode) {
@@ -455,10 +428,6 @@ class _ResolverCardState extends State<_ResolverCard> {
                   'Run tool/resolver/server.py on a computer this phone can '
                       'reach. It resolves with yt-dlp and streams a single-file '
                       'video through that server.',
-                ResolverMode.cobalt =>
-                  'Use a cobalt.tools-compatible instance that accepts API '
-                      'requests. The public api.cobalt.tools now requires a JWT; '
-                      'a self-hosted instance usually does not.',
               },
               style: theme.textTheme.bodySmall?.copyWith(
                 color: theme.colorScheme.onSurfaceVariant,

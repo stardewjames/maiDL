@@ -7,8 +7,7 @@ import java.net.URI
 
 enum class ResolverMode(val wire: String) {
     OFF("off"),
-    YTDLP("ytdlp"),
-    COBALT("cobalt");
+    YTDLP("ytdlp");
 
     companion object {
         fun fromWire(value: String?): ResolverMode =
@@ -19,15 +18,11 @@ enum class ResolverMode(val wire: String) {
 data class ResolverSettings(
     val mode: ResolverMode = ResolverMode.OFF,
     val ytdlpUrl: String = "",
-    val cobaltUrl: String = "",
 ) {
     val endpoint: String?
         get() {
-            val raw = when (mode) {
-                ResolverMode.OFF -> return null
-                ResolverMode.YTDLP -> ytdlpUrl
-                ResolverMode.COBALT -> cobaltUrl
-            }.trim()
+            if (mode == ResolverMode.OFF) return null
+            val raw = ytdlpUrl.trim()
             if (raw.isEmpty()) return null
             val uri = runCatching { URI(raw) }.getOrNull() ?: return null
             if (uri.scheme?.lowercase() !in setOf("http", "https")) return null
@@ -40,26 +35,22 @@ data class ResolverSettings(
     fun toPayload(): Map<String, Any?> = mapOf(
         "mode" to mode.wire,
         "ytdlpUrl" to ytdlpUrl,
-        "cobaltUrl" to cobaltUrl,
     )
 
     fun toJson(): JSONObject = JSONObject().apply {
         put("mode", mode.wire)
         put("ytdlpUrl", ytdlpUrl)
-        put("cobaltUrl", cobaltUrl)
     }
 
     companion object {
         fun fromJson(json: JSONObject): ResolverSettings = ResolverSettings(
             mode = ResolverMode.fromWire(json.optString("mode")),
             ytdlpUrl = json.optString("ytdlpUrl").trim(),
-            cobaltUrl = json.optString("cobaltUrl").trim(),
         )
 
         fun fromPayload(arguments: Map<*, *>?): ResolverSettings = ResolverSettings(
             mode = ResolverMode.fromWire(arguments?.get("mode") as? String),
             ytdlpUrl = (arguments?.get("ytdlpUrl") as? String).orEmpty().trim(),
-            cobaltUrl = (arguments?.get("cobaltUrl") as? String).orEmpty().trim(),
         )
     }
 }

@@ -10,8 +10,8 @@ import java.net.URI
 import java.util.concurrent.TimeUnit
 
 /**
- * Resolves social links through a user-configured yt-dlp service or Cobalt API.
- * Both return a direct URL the normal download engine can fetch.
+ * Resolves social links through a user-configured yt-dlp service. The service
+ * returns a direct URL the normal download engine can fetch.
  */
 object LinkResolver {
     data class Resolved(val mediaUrl: String, val fileName: String?)
@@ -48,13 +48,10 @@ object LinkResolver {
     fun resolve(link: String, settings: ResolverSettings): Resolved {
         val base = settings.endpoint
             ?: throw ResolverException("Add a resolver URL in Settings → Social links.")
-        val endpoint = when (settings.mode) {
-            ResolverMode.YTDLP -> base.trimEnd('/') + YTDLP_SUFFIX
-            ResolverMode.COBALT -> base
-            ResolverMode.OFF -> throw ResolverException(
-                "Turn on a link resolver in Settings → Social links.",
-            )
+        if (settings.mode != ResolverMode.YTDLP) {
+            throw ResolverException("Turn on the yt-dlp resolver in Settings → Social links.")
         }
+        val endpoint = base.trimEnd('/') + YTDLP_SUFFIX
         val body = JSONObject().put("url", link).toString().toRequestBody(jsonMediaType)
         val request = try {
             Request.Builder()
@@ -74,7 +71,7 @@ object LinkResolver {
                 val text = response.body?.string().orEmpty()
                 val json = runCatching { JSONObject(text) }.getOrNull()
                     ?: throw ResolverException("The resolver returned unreadable data.")
-                return parse(json, settings.mode)
+                return parse(json)
             }
         } catch (error: ResolverException) {
             throw error
@@ -85,68 +82,13 @@ object LinkResolver {
         }
     }
 
-    internal fun parse(json: JSONObject, mode: ResolverMode): Resolved {
-        if (mode == ResolverMode.YTDLP) {
-            val media = mediaUrl(json.optString("url"))
-                ?: throw ResolverException("The yt-dlp service did not return a media URL.")
-            return Resolved(
-                mediaUrl = media,
-                fileName = json.optString("fileName").takeIf { it.isNotBlank() }
-                    ?: json.optString("filename").takeIf { it.isNotBlank() },
-            )
-        }
-
-        when (json.optString("status")) {
-            "tunnel", "redirect", "stream" -> {
-                val media = mediaUrl(json.optString("url"))
-                    ?: throw ResolverException("The resolver did not return a media URL.")
-                return Resolved(
-                    mediaUrl = media,
-                    fileName = json.optString("filename").takeIf { it.isNotBlank() },
-                )
-            }
-
-            "picker" -> {
-                val picker = json.optJSONArray("picker")
-                if (picker != null) {
-                    val items = (0 until picker.length())
-                        .mapNotNull { picker.optJSONObject(it) }
-                    val ordered = items.filter { it.optString("type") == "video" } +
-                        items.filter { it.optString("type") != "video" }
-                    for (item in ordered) {
-                        val media = mediaUrl(item.optString("url"))
-                        if (media != null) {
-                            return Resolved(
-                                mediaUrl = media,
-                                fileName = json.optString("filename").takeIf { it.isNotBlank() },
-                            )
-                        }
-                    }
-                }
-                throw ResolverException("The resolver found no downloadable media.")
-            }
-
-            "error" -> {
-                val code = json.optJSONObject("error")?.optString("code").orEmpty()
-                if (code.isNotBlank()) {
-                    throw ResolverException("The resolver rejected this link ($code).")
-                }
-                val message = if (json.opt("error") is String) {
-                    json.optString("error")
-                } else {
-                    ""
-                }
-                throw ResolverException(
-                    message.ifBlank { "The resolver could not download this link." },
-                )
-            }
-        }
-
+    internal fun parse(json: JSONObject): Resolved {
         val media = mediaUrl(json.optString("url"))
-            ?: throw ResolverException("The resolver returned an unexpected response.")
+            ?: throw ResolverException("The yt-dlp service did not return a media URL.")
         return Resolved(
             mediaUrl = media,
-            fileName = json.optString("filename").takeIf { it.isNotBlank() },
+            fileName = json.optString("fileName").takeIf { it.isNotBlank() }
+                ?: json.optString("filename").takeIf { it.isNotBlank() },
         )
     }
 
